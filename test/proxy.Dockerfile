@@ -4,5 +4,5 @@
 #
 # No TLS. The real gatekeeper terminates HTTPS at its own front door and the hop
 # to this app is plain HTTP either way, which is exactly what this reproduces.
-FROM nginx:alpine
+FROM nginx:1.31.10-alpine3.24
 COPY nginx.conf /etc/nginx/conf.d/default.conf

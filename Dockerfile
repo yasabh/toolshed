@@ -4,7 +4,7 @@
 #
 # Ordered most-stable first, so that editing a template rebuilds as little as
 # possible: metadata -> vendored wasm -> server code.
-FROM node:22-alpine
+FROM node:26.13.1-alpine3.24
 
 LABEL org.opencontainers.image.title="toolshed" \
       org.opencontainers.image.description="Small self-hosted utilities behind the gatekeeper edge" \

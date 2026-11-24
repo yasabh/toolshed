@@ -46,7 +46,7 @@ trap cleanup EXIT
 # safeNext is pure string logic, so it is checked before anything is built —
 # a failure there is a security bug and there is no point proving the rest.
 head2 "=== safeNext ==="
-printf 'FROM node:22-alpine\nWORKDIR /srv\nCOPY . .\nCMD ["node","test/test-next.mjs"]\n' > "$WORK/unit.Dockerfile"
+printf 'FROM node:26.13.1-alpine3.24\nWORKDIR /srv\nCOPY . .\nCMD ["node","test/test-next.mjs"]\n' > "$WORK/unit.Dockerfile"
 if tar cf - lib/links.js test/test-next.mjs -C "$WORK" unit.Dockerfile |
      docker build -q -t toolshed-unit:test -f unit.Dockerfile - >/dev/null &&
    docker run --rm toolshed-unit:test >/dev/null; then

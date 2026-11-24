@@ -2,7 +2,7 @@
 # ENVIRONMENT=web and refuses to run anywhere else. Node cannot verify it, so
 # nothing short of an actual browser proves the page works — and this is the one
 # part of the app there is no other way to check.
-FROM node:22-bookworm-slim
+FROM node:26.13.1-bookworm-slim
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends chromium ca-certificates \
@@ -14,7 +14,7 @@ WORKDIR /w
 # puppeteer-core, not puppeteer: the distro's chromium is already above, and the
 # full package would download a second copy of it.
 RUN echo '{"type":"module"}' > package.json \
- && npm install --no-fund --no-audit puppeteer-core@23
+ && npm install --no-fund --no-audit puppeteer-core@23.11.1
 
 ENV CHROME=/usr/bin/chromium
 COPY browser-test.mjs .
