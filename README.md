@@ -1,432 +1,205 @@
+<div align="center">
+
 # toolshed
 
 Small self-hosted utilities behind the gatekeeper edge.
 
+[Quick start](#quick-start) • [Getting started](#getting-started) • [Deployment](#deployment-and-operations) • [Open questions](#open-questions)
+
+</div>
+
+A shell for small web tools, served at `/toolshed/` behind the gatekeeper
+nginx on the Pi (`rpi`). Today it hosts one tool, **ShrinkPDF**, which
+compresses PDFs in the browser: nothing is uploaded.
+Status: active. Current as of 2026-11-24.
+
 | Route | Name | Does |
 | --- | --- | --- |
-| `<prefix>/pdf` | ShrinkPDF | Compress PDFs — **in the browser**, nothing uploaded |
+| `<prefix>/pdf` | ShrinkPDF | Compress PDFs in the browser, nothing uploaded |
 
-**Pure Node, no dependencies** — the same shape as tvremotehub's webapp, so the
-two services read alike and there is no supply chain to audit for something that
-renders three templates. `node:22-alpine`, no build step, no bundler.
-
-**ShrinkPDF does its work on the user's machine.** Ghostscript is compiled to
-WebAssembly and runs in a Web Worker; the server only ships the page and the
-wasm. There is no upload endpoint — the route is GET-only, and `test/prefix.sh`
-asserts that a POST to it is a 405.
-
-## The access contract
-
-| | |
-| --- | --- |
-| Service name | `toolshed`, on the external `edge` network |
-| Listens | `:8080`, plain HTTP — TLS terminates at the gateway |
-| Published ports | **none**, ever (see below — this one is load-bearing) |
-| Path arrives | already stripped: `/toolshed/pdf` → `/pdf` |
-| URLs go out | built from `X-Forwarded-Prefix` |
-| HTML ends | `</body>`, so the gateway's badge has somewhere to land |
+## Quick start
 
 ```sh
-docker compose up -d --build
+docker context use rpi
+SKIP_BROWSER=1 ./test/prefix.sh   # builds the image, runs it behind a stand-in gateway
 ```
 
-> **Prefix:** `/toolshed/`. Nothing in this app knows that string — it reads
-> whichever `X-Forwarded-Prefix` the gateway sends, and `./test/prefix.sh /tools`
-> still passes, which is how that stays true rather than merely intended.
+You should see `58 passed, 0 failed` and `418s in the proxy log (2 deliberate)`.
 
-### Why "no published ports" is a security requirement
+## Purpose
 
-`X-Auth-User` can be trusted only because nginx overwrites it on every proxied
-hop. Publish a port and anything on the LAN can set that header itself, arriving
-past the gate as whoever it likes. The same reasoning holds up `lib/limits.js`,
-which trusts Content-Length because nginx buffers a proxied body and computes
-it. Both guarantees end the moment `:8080` is
-reachable directly.
+- **Problem:** compress PDFs (e.g. to fit an email) without sending them to a
+  third-party site.
+- **People:** owner and maintainer: yasabh. Users: people signed in through
+  gatekeeper (the gate is not wired yet, see [Security](#security)).
+- **Hard constraints:**
+  - No published ports, ever: see [Security](#security).
+  - Files never leave the user's machine. The server answers GET only.
+  - No npm dependencies, no build step.
+- **Rejected options:**
+  - Express or Python/Starlette: [ADR 0001](docs/adr/0001-pure-node-no-express.md)
+  - Compressing on the server: [ADR 0002](docs/adr/0002-compress-in-the-browser.md)
+  - Loading wasm from a CDN or npm at build: [ADR 0003](docs/adr/0003-vendored-wasm.md)
+  - Previewing in the browser's own PDF viewer: [ADR 0004](docs/adr/0004-preview-with-pdfjs.md)
 
-## Prove it
+## Features
+
+- **In-browser compression:** Ghostscript compiled to WebAssembly, in a pool of
+  Web Workers sized to the machine.
+- **Presets:** target-quality recipes in `public/presets.js`, shared by the page
+  and the worker.
+- **Image stats:** per file, how many images were resized and how many left as
+  they were.
+- **Side-by-side preview:** before and after, rendered by PDF.js with synced
+  scroll and zoom.
+- **Batch results:** select, download as a zip, or share through the OS share
+  sheet where the browser supports it.
+
+## Getting started
+
+Prerequisites:
+
+- Docker with the `rpi` context (`ssh://admin@192.168.100.226`). Node is not
+  needed locally; everything runs in containers.
+- Nothing publishes a port and nothing is bind-mounted, so every command works
+  against the remote context.
 
 ```sh
-./test/prefix.sh              # both prefixes + headless browser, in docker
+./test/prefix.sh                  # full proof: both prefixes + headless Chromium
 SKIP_BROWSER=1 ./test/prefix.sh   # server side only, much quicker
-node test/test-next.mjs       # pure unit test, needs only node
-./test/vendor.sh              # re-fetch the vendored Ghostscript-WASM
+./test/prefix.sh /tools           # proves the prefix is not hardcoded
+./test/vendor.sh                  # re-fetch vendored wasm; only to change version
 ```
 
-`prefix.sh` runs the `safeNext` unit test, builds the real image, puts it behind
-an nginx that mirrors gatekeeper's block, and asserts the whole contract — 51
-checks — then drives the page in a **real headless Chromium** for 20 more. That second stage is not optional polish: the
-vendored Ghostscript is compiled `ENVIRONMENT=web` and refuses to load anywhere
-else, so a browser is the only thing that can prove the tool works at all. It
-also checks the privacy claim directly, by asserting that every request the page
-made was a GET. The stand-in
-gateway answers **418** on `location /`: on the real one that namespace is
-tv-webui's catch-all, so a leaked unprefixed request would not 404, it would
-quietly land somewhere else. Ending with "2 deliberate 418s in the log" is how
-the run says nothing leaked.
+`SKIP_BROWSER=1 ./test/prefix.sh` verified 2026-11-24 (58 passed). The full
+run with the browser stage: `UNVERIFIED` this session.
 
-Nothing publishes a port and nothing is bind-mounted, so it works against a
-remote docker context — which is what `rpi` is.
+`prefix.sh` also runs the `safeNext` unit test (`test/test-next.mjs`) in a
+`node:26.13.1-alpine3.24` container. With Node installed locally: `node test/test-next.mjs`
+(`UNVERIFIED`, no local Node here).
 
-## The gatekeeper side
+## Configuration
 
-A change in the **gatekeeper** repo, not this one. `test/nginx.conf` is the
-same block, and is what the harness actually runs:
+| Name | Purpose | Default | Where set |
+| --- | --- | --- | --- |
+| `PORT` | listen port | `8080` | not set; gatekeeper expects 8080 |
+| `TZ` | container timezone | UTC | `docker-compose.yml`: `Europe/Budapest` |
+| `MAX_BODY_BYTES` | body cap for non-GET requests | 100 MB | not set |
 
-```nginx
-location = /toolshed { return 302 /toolshed/; }
+No secrets. `MAX_FILES` (20) is a UI limit in `lib/tools/pdf.js`.
 
-location /toolshed/ {
-    # sub_filter reads the body, so it must arrive uncompressed.
-    proxy_set_header Accept-Encoding "";
-    sub_filter_types text/html;
-    sub_filter_once on;
-    sub_filter "</body>" "$whoami_tag</body>";
-
-    # A variable host forces per-request DNS re-resolution, which disables
-    # nginx's automatic prefix replacement — a trailing slash does NOT strip
-    # the prefix here. Strip it explicitly, before proxy_pass.
-    set $toolshed toolshed;
-    rewrite ^/toolshed/(.*)$ /$1 break;
-    proxy_pass http://$toolshed:8080;
-
-    proxy_set_header Host               $host;
-    proxy_set_header X-Real-IP          $remote_addr;
-    proxy_set_header X-Forwarded-For    $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto  $scheme;
-    proxy_set_header X-Forwarded-Prefix /toolshed;  # how this app builds URLs
-    proxy_set_header X-Auth-User        "";         # ungated for now
-
-    # Nothing is uploaded any more, so this only has to be large enough that
-    # nginx never becomes the reason a request is refused.
-}
-```
-
-Unlike `/tvs/`, this app needs **no** catch-all `location /`. Nothing it emits
-is unprefixed, and `test/prefix.sh` is what says so.
-
-## How it hangs together
+## Architecture
 
 ```
-server.js      the router, in the order a request meets things
+server.js      the router, in the order a request meets things:
+               prefix → cross-site check → body size → gate → static → routes
 lib/
-  prefix.js    X-Forwarded-Prefix in, url() out — read before adding any URL
-  links.js     safeNext(); pure, no imports, so it unit-tests on its own
+  prefix.js    X-Forwarded-Prefix in, url() out; read before adding any URL
+  links.js     safeNext(); pure, no imports, unit-tested on its own
   csrf.js      fetch-metadata check + double-submit token
   limits.js    refuse an oversized body before anything reads it
-  static.js    public/ with ETag, 304 and Range; caching decided per path
-  gate.js      the auth gate, deliberately empty; see below
+  static.js    public/ with ETag, 304 and Range; caching per path
+  gate.js      the auth gate, deliberately empty; its contract is in the comment
   registry.js  the tool list the sidebar and routes are built from
   render.js    the only way to render a page, so nothing loses the prefix
-  tools/pdf.js ShrinkPDF — a description of a page, and nothing else
+  tools/pdf.js ShrinkPDF: a description of a page, nothing else
 templates/     base.html is the sidebar + header; one fragment per tool
-public/
-  style.css      the shell
-  app.js         theme toggle, sidebar, notices
-  pdf.js         ShrinkPDF's page: the worker pool and the UI
-  presets.js     the target-quality presets — labels, filename suffixes and gs
-                 flags in one place, imported by the page and the worker so
-                 they cannot drift
-  pdf-images.js  finds image XObjects by reading the PDF bytes
-  zip.js         a stored-only ZIP writer, ~90 lines, for "Download selected"
-  gs-worker.js   Ghostscript, off the main thread
-  preview.js     PDF.js rendering the before/after panes
-  vendor/        ghostscript-wasm-esm, committed; see test/vendor.sh
-test/
-  prefix.sh        the end-to-end proof
-  browser-test.mjs the same, in a real Chromium — the only thing that can
-                   prove the client-side half
-  test-next.mjs    safeNext() against every bypass it has to survive
-  nginx.conf       gatekeeper's block, reproduced
-  vendor.sh        fetches the wasm; run only to change version
+public/        page JS and CSS; vendor/ holds Ghostscript-WASM and PDF.js
+test/          prefix.sh (end-to-end), browser-test.mjs, test-next.mjs,
+               nginx.conf (gatekeeper's block), vendor.sh
+docs/          design.md, adr/, lessons.md
 ```
 
-### Two things Ghostscript will not tell you
+**Adding a tool:** write `lib/tools/<id>.js` exporting a `TOOL`, add a template
+fragment, list it in `lib/registry.js`. Sidebar, route and `<h1>` come from that
+entry. A new folder also needs a `COPY` line in the `Dockerfile`.
 
-Both were measured here, not taken from documentation, and both are easy to get
-wrong silently:
+Design detail (worker pool, preview, image counting, page behaviour):
+[docs/design.md](docs/design.md).
 
-**`-dJPEGQ` does nothing.** pdfwrite ignores it — `-dJPEGQ=10` and `-dJPEGQ=95`
-produce byte-identical output. JPEG quality is set through distiller parameters
-as a **QFactor**, where lower is better: 0.1 maximum, 0.4 high, 0.76 medium,
-1.3 low. Any recipe that sets `-dJPEGQ` is not doing what it says.
+## Deployment and operations
 
-**`-dColorImageResolution` is not a cutoff.** `DownsampleThreshold` defaults to
-1.5, so "200 dpi" silently means "anything above 300 dpi becomes 200" and a 250
-dpi scan sails through untouched. Email sets it to 1.0 so the number means what
-the label says; Print deliberately leaves the default, because resampling a 350
-dpi photo to 300 costs real quality and saves very little.
-
-### Counting images without asking Ghostscript
-
-`public/pdf-images.js` reads image dictionaries straight out of the PDF, before
-and after, so the result row can say *"12 images · 9 resized, 3 left as they
-were"*. It works because of one rule: an object with a stream may not live inside
-an object stream, and every image XObject has one — so image dictionaries are
-always top-level and in plain text, even in an otherwise compressed PDF 1.6.
-
-The obvious alternative, `-dPDFDEBUG`, does contain the same information but
-costs a JS callback per line of a dump of every object in the file. On a
-thousand-image brochure that is more expensive than the compression itself.
-
-The *reason* an image was left alone is deliberately not claimed. That depends on
-its effective dpi, which is pixel size divided by how large it is drawn — and the
-second half of that lives in the page's content stream as a transformation
-matrix. Reading it means interpreting the drawing program, which is a different
-project.
-
-### The preview, and why it is not the browser's own viewer
-
-The side-by-side preview started with two `<iframe>`s holding the browser's
-built-in PDF viewer — deliberately, because an independent renderer is a second
-opinion on the file rather than a replay of the Ghostscript that made it.
-
-It had to be abandoned, and the reason is worth recording: **that viewer is a
-separate, cross-origin document.** Its scroll position can be neither read nor
-set, so two panes can never be kept together. Zoom fared no better —
-`#zoom=` is ignored for `blob:` URLs, and the workaround of resizing the frame to
-the zoom put the bottom of the page out of reach. Every project that does this
-successfully reaches the same conclusion: to control the scrolling you have to
-own the renderer.
-
-So the panes are rendered by **PDF.js**, loaded only when a preview is first
-opened. Most of the second opinion survives: it is Mozilla's engine, the one
-Firefox ships, and it shares no code with Ghostscript. What is lost is that it is
-not *this* user's viewer.
-
-Three bugs found by measuring rather than by reading, all of which looked fine in
-one pane and only showed up in two:
-
-- **A grid column's default minimum is its content.** `1fr 1fr` let a page zoomed
-  to 300% widen its own column and squeeze the other, so the two documents
-  stopped being shown at comparable sizes. `minmax(0, 1fr)` fixes it.
-- **A redraw requested while one is running was dropped, not queued.** Whichever
-  document was still rendering when the zoom was clicked kept its old scale for
-  ever, because nothing asked again.
-- **Resizing a canvas clears it**, so zooming blanked every visible page for as
-  long as the redraw took. Pages are drawn into a new canvas and swapped in.
-
-### The vendored Ghostscript
-
-`public/vendor/` holds `ghostscript-wasm-esm@1.0.1` (**15.4 MB**) and
-`pdfjs-dist@6.2.108` (**1.6 MB**, minified build and worker only), committed
-rather than installed at build time. There is no npm in this image and no build
-step to add one to, and a CDN at runtime would mean every person compressing a
-PDF tells jsdelivr they are doing it, which defeats the point. `test/vendor.sh`
-re-fetches it and records checksums in `VENDOR.txt`.
-
-Ghostscript's build is **AGPL-3.0**; PDF.js is **Apache-2.0**. Serving either to
-a browser is distribution, so both licences ship beside them and are linked from
-the tool's page.
-
-Adding a tool is: write `lib/tools/<id>.js` exporting a `TOOL`, add a template
-fragment, list it in `lib/registry.js`. Sidebar, route and `<h1>` all come from
-that one entry, so a tool cannot be reachable but unlisted. The cross-cutting
-rules live in `server.js` ahead of the routes, so a new tool gets the body cap
-and the cross-site check without doing anything.
-
-### Why no Express
-
-Express would earn its place for one thing here — `express.static`, which is
-battle-tested where `lib/static.js` is hand-written. The rest it would not:
-there are six routes, no request bodies at all, and a template engine would
-still have to be chosen separately. Against that, it is ~30 transitive packages
-in a service that serves nine files from behind a gate. `lib/static.js` covers
-what actually matters for these assets — correct MIME (`application/wasm` or the
-browser cannot stream-compile), ETag/304, and Range so an interrupted 15.4 MB
-download resumes rather than restarting.
-
-### URLs
-
-The gateway strips the prefix, so this app routes on the unprefixed path and
-puts the prefix back on everything it emits, via `prefix.url()`. The prefix is
-deliberately **not** installed as ASGI `root_path` — whether Starlette strips it
-from `scope["path"]` before matching has changed across versions, and getting it
-wrong 404s everything only when behind the proxy. Starlette's trailing-slash
-redirect is off for the same reason: it builds an absolute URL from the stripped
-path, which points at the gateway root. `PrefixMiddleware` normalises the path
-instead, so there is no redirect to get wrong.
-
-### Why it runs in the browser
-
-| | server-side (was) | in-browser (now) |
+| Environment | Where | URL path |
 | --- | --- | --- |
-| Where files go | uploaded to the Pi | nowhere |
-| Ghostscript | native binary in the image | 15.4 MB wasm, cached |
-| Pi's job per file | one gs process, capped, queued | serve a static file |
-| Hostile PDF parsed by | the box running gatekeeper | the tab that opened it |
-| Cost | upload time, 100 MB cap | one-time 15.4 MB download |
+| prod | docker context `rpi`, network `edge` | `/toolshed/` via gatekeeper |
 
-Output is the same either way — verified against native gs on the same file, to
-within a percent.
+```sh
+docker context use rpi
+docker compose up -d --build      # deploy
+docker compose logs -f toolshed   # logs
+docker compose restart toolshed   # restart
+```
 
-The honest costs: it needs JavaScript, a browser new enough for module workers,
-and that first 15.4 MB. A very large PDF can also exhaust a phone tab where the
-Pi would have coped — but that is the user's own tab, not everyone's gateway.
+- **Health:** `GET /healthz` returns `{"ok":true}`; the Dockerfile
+  `HEALTHCHECK` uses it.
+- **Rollback:** check out the previous commit and run `docker compose up -d --build`
+  again. Images are not versioned (`toolshed:latest`). `UNVERIFIED`.
+- **Gatekeeper side:** the nginx block lives in the gatekeeper repo;
+  `test/nginx.conf` is the copy the tests run. See
+  [docs/design.md](docs/design.md#the-gatekeeper-side).
 
-Files run in parallel across a worker pool sized to the machine it is running
-on. **Two ceilings, and the lower one wins:**
+> [!WARNING]
+> Never add `ports:` to `docker-compose.yml`. See [Security](#security).
 
-| | |
-| --- | --- |
-| CPU | `floor(hardwareConcurrency × 0.8)` |
-| Memory | `floor(deviceMemory × 0.4 ÷ 512 MB)` |
-| Work | never more workers than files |
+## Security
 
-Cores decide how much can happen at once; **memory decides how much may be
-resident**, because every worker holds its own Ghostscript instance plus a PDF in
-and a PDF out, and that is what actually kills a tab. A phone with eight cores
-and 4 GB is bounded by the second, not the first. Note that browsers clamp
-`deviceMemory` at 8 to make it useless for fingerprinting, so a 64 GB
-workstation and a 16 GB laptop both report the same — which keeps this
-conservative on both, and it is absent entirely on Firefox and Safari.
+- **Access contract:** service `toolshed` on the external `edge` network,
+  `:8080` plain HTTP (TLS ends at the gateway), prefix already stripped,
+  URLs built from `X-Forwarded-Prefix`, HTML ends with `</body>` for the
+  gateway's badge.
+- **No published ports.** `X-Auth-User` and Content-Length can be trusted only
+  because nginx overwrites them on every hop. Publish a port and anyone on the
+  LAN can set them.
+- **No uploads.** Tools answer GET/HEAD only; anything else is a 405.
+- **Defence kept for future tools:** cross-site requests are refused
+  (`Sec-Fetch-Site`/`Origin`) and oversized bodies refused before reading;
+  pages carry a double-submit CSRF token.
+- **`next=` validation:** `safeNext()` in `lib/links.js` refuses control
+  characters and normalises like a browser before testing, so `//evil.com`,
+  `/\evil.com` and `" //evil.com"` fail. `test/test-next.mjs` covers each.
+- **Authorisation** will come from a call to `auth`, never from a header. The
+  gate is not wired yet; its contract is in `lib/gate.js`.
+- **Container:** runs as `node` (uid 1000, asserted by `test/prefix.sh`),
+  `no-new-privileges`, code root-owned and read-only to the process,
+  `pids_limit: 128`, `cpus: 1.0`. No `mem_limit`: the Pi ignores it
+  ([L-004](docs/lessons.md#l-004--2026-08-11--platform--mem_limit-is-silently-discarded-on-the-pi)).
+- **Responses:** pages are `no-store`, with `nosniff`, `no-referrer`,
+  `X-Frame-Options: DENY`. Errors never include a stack.
+- **Licences:** Ghostscript is AGPL-3.0, PDF.js Apache-2.0; both ship in
+  `public/vendor/` and are linked from the page.
 
-| machine | workers |
-| --- | --- |
-| 2 cores / 2 GB | 1 |
-| 4 cores / 4 GB | 3 |
-| 8 cores / 4 GB (phone) | 3 |
-| 8 cores / 8 GB | 6 |
-| 16 cores, clamped to 8 GB | 6 |
+## Maintenance
 
-Capped rather than uncapped for a second reason too: a background tab that takes
-the whole CPU is a machine that feels broken. Work is handed out on demand rather
-than dealt evenly up front — PDFs differ wildly in how long they take, and a
-worker that drew three quick ones should pick up a fourth rather than idle beside
-one still grinding.
+- **Owner:** yasabh.
+- **Tests:** `./test/prefix.sh` before every deploy.
+- **Dependencies:** none from npm. Base image `node:26.13.1-alpine3.24` (Node 26
+  LTS, EOL 2029-04-30, same as tvremotehub), pinned exactly; test images too;
+  vendored wasm updated by hand with `test/vendor.sh`, checksums in
+  `public/vendor/VENDOR.txt`.
+- **Conventions:** short commit messages, no `Co-Authored-By` trailer. Comments
+  explain why, not what. `TZ` is `Europe/Budapest`: the deployment is in
+  Hungary.
+- **Decisions:** [docs/adr/](docs/adr/). **Lessons:** [docs/lessons.md](docs/lessons.md).
 
-### The first run is network, not CPU
+## Performance
 
-The engine is fetched **when a file is picked**, not when Compress is clicked.
-Left until the click, 15.4 MB of download is the first thing that happens after
-it — seconds of waiting during which nothing is computing and the CPU sits idle,
-which is exactly what "slow, but nothing seems to be happening" is. Choosing a
-quality and moving to the button is time that was being wasted; this spends it on
-the download. Still not on page load: someone who opens the page to read it
-should not pay 15.4 MB for the privilege.
+- Engine: 15.4 MB wasm, fetched when a file is picked, cached by the browser
+  (ETag), served with Range so a broken download resumes.
+- Worker pool: `min(80% of cores, deviceMemory × 0.4 ÷ 512 MB, files)`. One
+  file uses one core: `pdfwrite` is single-threaded. Detail in
+  [docs/design.md](docs/design.md#worker-pool).
+- Image: ~270 MB, of which ~250 MB is the `node:26.13.1-alpine3.24` base
+  (2026-11-24, `docker image ls`). Alternatives were measured; see
+  [ADR 0001](docs/adr/0001-pure-node-no-express.md).
 
-**A single file uses a single core, and that is not a bug.** The pool
-parallelises across files, not within one — Ghostscript's `pdfwrite` is
-single-threaded, and one PDF is one invocation. Splitting a file by page range
-and merging would duplicate every shared image (a logo on forty pages becomes
-forty copies), so the output would grow. One file on an eight-core machine is
-~12% CPU and is going as fast as it can.
+## Open questions
 
-### Dropping
-
-Handled on the `window`, not only on the dashed box. Landing two centimetres
-outside it is not a mistake worth punishing, and the browser's default for an
-unhandled drop is to *navigate to the file*: the page is replaced by the PDF and
-everything already picked is gone. The whole page outlines while a file is over
-it, because "drop anywhere" is useless as a secret.
-
-### Closing the tab
-
-Results live in this page and nowhere else — that is the design, not a
-limitation — so closing the tab throws them away. The `beforeunload` listener is
-**added and removed** rather than left in place: it is registered only while a
-batch is running or a result has not been downloaded, because a page that always
-asks is one people learn to click straight past. Taking a copy — a row's
-Download, the zip, or a share sheet that actually resolved — clears the file that
-was taken, and the bar says how many are still at risk.
-
-The 15.4 MB module is compiled **once** on the main thread and the resulting
-`WebAssembly.Module` is posted to every worker. Compiling it per worker is the
-obvious way to make a pool slower than no pool. Workers are terminated after each
-batch; the compiled module is kept.
-
-### Selecting results
-
-Everything that finishes starts ticked — the common case is "all of them", and
-unticking two beats ticking eighteen. A row still compressing has a *disabled*
-checkbox rather than none, because a missing box only raises a question. "Select
-all" goes indeterminate at 3 of 4 so the header never claims more than is true,
-and the whole row tints rather than only the box: the tick can sit 300px from the
-button it governs. Counts live inside the buttons (*Download 3*), so an action
-names its own scope and cannot be misread as "all". One file selected downloads
-as a PDF, not a zip of one.
-
-**Email is feature-detected and often absent.** `mailto:` cannot carry an
-attachment — there is no parameter for it, in any browser — so the only way that
-keeps files on the machine is `navigator.share({files})`, the OS share sheet.
-That exists on Android, iOS Safari and Chrome/Edge on Windows, and not on desktop
-Firefox or most of Linux. Where it is missing the button is not rendered at all,
-rather than rendered and then failing. Sending from a server would work
-everywhere and would make "nothing is uploaded" a lie.
-
-### Multiple files
-
-Each file is compressed separately and gets its own row, so the first result
-appears while the rest are still going and one bad file does not take the others
-down with it.
-
-### Security the app owns
-
-- **Authorisation** comes from a call to `auth`, never from a header.
-  `X-Auth-User` is read for the "signed in as …" line and nothing else.
-- **`next=` validation** is `links.safe_next()`. It refuses control characters
-  outright rather than stripping them, then normalises the way a browser does
-  *before* testing — trimming, folding backslashes — because `//evil.com`,
-  `/\evil.com`, `/\t/evil.com` and `" //evil.com"` all get past a
-  `startswith("/")` test. `test/test-next.mjs` covers each.
-- **CSRF on every POST**, in two layers. `Sec-Fetch-Site`/`Origin` are checked
-  in middleware, before the body is read, so a cross-site 100 MB upload is
-  refused rather than parsed; a double-submit cookie token is checked in the
-  handler, for clients that send no fetch metadata.
-- **Uploads** are refused on Content-Length before anything reads them, streamed
-  into a temp dir under `/tmp` (a 512 MB tmpfs), rejected on the first chunk if
-  they are not a PDF, and removed in a `finally` — the success path hands the
-  directory to the response, which removes it once the last byte is sent. A
-  caller's filename is never used as a path; it survives only as a scrubbed
-  label in `Content-Disposition`.
-- **Ghostscript is not installed on the server at all** any more. The largest
-  attack surface this app had — a C parser reading files strangers chose, on the
-  box that also runs gatekeeper, Grafana and tv-webui — is now a wasm sandbox in
-  the user's own tab. No temp files, no rlimits, no queue, no upload cap.
-- **No `mem_limit` in compose.** This host's firmware sets
-  `cgroup_disable=memory` on the kernel command line, so docker discards it with
-  a warning on every `up`, and a control that is not enforced is worse than none
-  because it reads like one. `cpus` and `pids_limit` do apply and are kept.
-- **CSRF and the body-size guard are still in middleware** even though nothing
-  POSTs today. They are the shell's rules, not the tool's, so the next tool
-  inherits them instead of having to remember them.
-- **The container runs as uid 10001** with `no-new-privileges`.
-- **A batch is bounded by count as well as bytes** (`MAX_FILES`, default 20).
-  Twenty-one small PDFs pass the body cap easily; what they cost is twenty-one
-  Ghostscript runs held open on one connection.
-
-### The gate
-
-Not implemented yet, on purpose — `app/gate.py` is where it goes and says what
-it must do: ask `auth:8080` per request, never cache, and refuse in the shape
-the caller expects (302 to `login_url()` for a navigation, a bare 401 for a
-background fetch). That split already exists as `gate.is_navigation()` and
-ShrinkPDF already uses it for its own errors, so the two cannot drift apart.
-
-## Conventions
-
-- Commit messages are **short** — a subject line, body only when it earns its
-  place. **No `Co-Authored-By` trailer.**
-- Comments explain **why**, not what. The surrounding repos are written that way,
-  and the commit messages stay short precisely because the code carries it.
-- `TZ` is `Europe/Budapest`. The deployment is in Hungary — do not infer a
-  timezone from the language spoken in the issue tracker.
-
-### The visual language is shared, not owned
-
-The `:root` token block at the top of `app/static/style.css`, the `theme`
-localStorage key, and the `.theme-toggle` markup are **tv-webui's, verbatim**.
-Three pages on this origin share them — `/tvs`, `/login` and here — so a user who
-picks light mode in one sees it everywhere, and drift shows up immediately. Do
-not tidy them.
-
-Three fixes learned from the login page apply here too: **labels above fields**,
-not placeholders (a placeholder vanishes exactly when someone wants to check what
-they typed); a **3px focus ring** rather than a border-colour shift; and **no
-entry animation** on anything that re-renders after an error, because it replays
-on every attempt and turns a correction into a wait.
-
-### Identity, when the gate is wired
-
-Sessions belong entirely to `auth`: web sign-ins last until the coming Saturday
-00:00 Europe/Budapest, WiFi identity is re-derived per request. This app stores
-no session of its own and **must not cache the answer**. See `app/gate.py`.
+- **Gate:** when will `lib/gate.js` be wired to `auth`? Until then `/toolshed/`
+  is ungated at this app (owner: yasabh).
+- **Image tag:** version the image instead of `toolshed:latest`, so rollback
+  does not need a rebuild?
+- **Security scan:** `check-security` has not been run yet.
+- **Worker table** in docs/design.md is computed from the formula, not measured
+  on real devices.
+- **Old images on the Pi:** `toolshed:dbg`, `toolshed:layertest*`,
+  `toolshed:wasm`, `toolshed-toolshed:latest` look unused. Safe to remove?
