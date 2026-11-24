@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fetch the vendored Ghostscript-WASM into app/static/vendor/.
+# Fetch the vendored Ghostscript-WASM into public/vendor/.
 #
 # The files are committed rather than installed at build time — there is no npm
 # in this image and no build step to add one to, and a CDN at runtime would mean
