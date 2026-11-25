@@ -59,7 +59,7 @@ You should see `58 passed, 0 failed` and `418s in the proxy log (2 deliberate)`.
 
 Prerequisites:
 
-- Docker with the `rpi` context (`ssh://admin@192.168.100.226`). Node is not
+- Docker with the `rpi` context (SSH to the Pi; ask the owner). Node is not
   needed locally; everything runs in containers.
 - Nothing publishes a port and nothing is bind-mounted, so every command works
   against the remote context.

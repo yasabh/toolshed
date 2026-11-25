@@ -8,7 +8,7 @@ FROM node:26.13.1-alpine3.24
 
 LABEL org.opencontainers.image.title="toolshed" \
       org.opencontainers.image.description="Small self-hosted utilities behind the gatekeeper edge" \
-      org.opencontainers.image.source="https://github.com/yasabh/toolshed-" \
+      org.opencontainers.image.source="https://github.com/yasabh/toolshed" \
       org.opencontainers.image.licenses="AGPL-3.0"
 
 # Alpine ships no timezone data, so a TZ on its own resolves to nothing and the
