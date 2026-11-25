@@ -1,531 +1,576 @@
-/* Theme: dark by default; "system" follows the OS; explicit light/dark win.
-   This block is tv-webui's, verbatim — same origin, same `theme` key, so a user
-   who picks light mode in /tvs or /login sees this page light too. Drift here is
-   immediately visible, so do not "tidy" it. */
-:root { color-scheme: light dark; --bg:#111; --fg:#eee; --muted:#888;
-        --field-bg:#222; --field-fg:#eee; --field-br:#444; --accent:#4a90d9;
-        --backdrop:rgba(0,0,0,.8); }
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme]) { --bg:#efefef; --fg:#1a1a1a; --muted:#666;
-        --field-bg:#fff; --field-fg:#1a1a1a; --field-br:#ddd; }
-}
-/* Pin color-scheme to the chosen theme, or the browser keeps drawing form
-   controls (checkboxes etc.) in the OS scheme — dark boxes on a light UI. */
-:root[data-theme="light"] { color-scheme:light; --bg:#efefef; --fg:#1a1a1a; --muted:#666;
-        --field-bg:#fff; --field-fg:#1a1a1a; --field-br:#ddd; }
-:root[data-theme="dark"]  { color-scheme:dark; --bg:#111; --fg:#eee; --muted:#888;
-        --field-bg:#222; --field-fg:#eee; --field-br:#444; }
+/* Gatekeeper's look, shared with the sign-in page (gatekeeper/auth/static/
+   login.css) and the gateway's landing page: keep the tokens and @font-face in
+   step with those. The font files are the gateway's (same origin,
+   /_assets/fonts); if they are missing the fallback stacks still read fine.
+   The theme key is still `theme`, the same one /tvs and /login use, so a choice
+   made in one app carries to the others. */
+@font-face { font-family: "Bricolage Grotesque"; font-style: normal; font-weight: 300 800;
+  font-display: swap; src: url(/_assets/fonts/bricolage.woff2) format("woff2"); }
+@font-face { font-family: "JetBrains Mono"; font-style: normal; font-weight: 400 600;
+  font-display: swap; src: url(/_assets/fonts/jetbrains-mono.woff2) format("woff2"); }
 
-*, *::before, *::after { box-sizing:border-box; }
-body { margin:0; font-family:system-ui,sans-serif;
-       background:var(--bg); color:var(--fg); }
+:root {
+  --bg: #f2efe6; --panel: #fbf9f3; --ink: #16180f; --muted: #6a6b5e;
+  --line: #d8d4c6; --dot: rgba(22,24,15,.13); --accent: #e0501b; --on-accent: #fff;
+  --glow: rgba(224,80,27,.14); --bad: #c8331d; --ok: #3d8a3a;
+  --shadow: rgba(22,24,15,.18);
+  /* The gateway's injected "Logged in as" pill (gatekeeper/gateway/whoami.js)
+     reads tv-webui's token names. Mapped here so it wears this page's colours
+     in both themes instead of its dark fallbacks. */
+  --field-bg: var(--panel); --field-br: var(--line); --fg: var(--ink);
+  --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0d0f0b; --panel: #14170f; --ink: #ecebe1; --muted: #8e9082;
+  --line: #2a2e23; --dot: rgba(236,235,225,.07); --accent: #ff6a2b; --on-accent: #120a05;
+  --glow: rgba(255,106,43,.13); --bad: #ff7a5c; --ok: #7fcf6a; --shadow: rgba(0,0,0,.45);
+  color-scheme: dark } }
+/* Pinned as well as the media query, so the toggle wins both ways — and
+   color-scheme with it, or the browser keeps drawing form controls in the OS
+   scheme: dark boxes on a light UI. */
+:root[data-theme="dark"] {
+  --bg: #0d0f0b; --panel: #14170f; --ink: #ecebe1; --muted: #8e9082;
+  --line: #2a2e23; --dot: rgba(236,235,225,.07); --accent: #ff6a2b; --on-accent: #120a05;
+  --glow: rgba(255,106,43,.13); --bad: #ff7a5c; --ok: #7fcf6a; --shadow: rgba(0,0,0,.45);
+  color-scheme: dark }
+
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0; font-family: var(--display); color: var(--ink);
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(60rem 30rem at 10% -10%, var(--glow), transparent 70%),
+    radial-gradient(var(--dot) 1px, transparent 1.2px);
+  background-size: auto, 22px 22px;
+}
 
 /* One focus treatment for the whole app: a 3px ring, never a border-colour
-   shift. A shift is invisible on a field that already has a coloured border,
-   and it moves the layout by nothing so nobody notices it moved. */
-:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+   shift. A shift is invisible on a field that already has a coloured border. */
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 
-/* Thin scrollbars everywhere one appears. Four scrolling areas can be on screen
-   at once — two file lists and two preview panes — and a default scrollbar is
-   nearly as wide as a file chip's remove button.
-   The thumb is mixed from --fg, so one rule covers both themes. */
-* { scrollbar-width:thin;
-    scrollbar-color:color-mix(in srgb, var(--fg) 28%, transparent) transparent; }
+/* Thin scrollbars everywhere one appears: the file list and two preview panes
+   can all be on screen at once. The thumb is mixed from --ink, so one rule
+   covers both themes. */
+* { scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--ink) 28%, transparent) transparent; }
 
-/* Where ::-webkit-scrollbar exists it can be made thinner than the standard
-   `thin` allows — but only if `scrollbar-width` gets out of its way first: a
-   current Chrome that sees both obeys the standard property and ignores every
-   rule below. So the two are kept apart rather than stacked, and each engine
-   takes the narrower path it actually has. */
+/* Where ::-webkit-scrollbar exists it can be made thinner than `thin` — but only
+   if `scrollbar-width` gets out of its way first: a current Chrome that sees
+   both obeys the standard property and ignores every rule below. */
 @supports selector(::-webkit-scrollbar) {
-  * { scrollbar-width:auto; }
-  ::-webkit-scrollbar { width:6px; height:6px; }
-  ::-webkit-scrollbar-track { background:transparent; }
-  ::-webkit-scrollbar-thumb { border-radius:999px;
-      background:color-mix(in srgb, var(--fg) 28%, transparent); }
+  * { scrollbar-width: auto; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { border-radius: 999px;
+      background: color-mix(in srgb, var(--ink) 28%, transparent); }
   ::-webkit-scrollbar-thumb:hover {
-      background:color-mix(in srgb, var(--fg) 45%, transparent); }
-  ::-webkit-scrollbar-corner { background:transparent; }
+      background: color-mix(in srgb, var(--ink) 45%, transparent); }
+  ::-webkit-scrollbar-corner { background: transparent; }
 }
 
-/* ---- Shell: sidebar + pane ------------------------------------------------ */
-/* A definite height, not a minimum. `max-height:100%` on the workbench below can
-   only resolve against a parent whose height is actually known — with
-   min-height:100vh the chain stays content-sized and the cap never binds, so a
-   long file list pushed the whole page taller instead of scrolling inside. */
-.shell { display:flex; height:100vh; }
+/* ---- Shell ----------------------------------------------------------------
+   A fixed height, not min-height: the lists further down can only scroll inside
+   themselves if every parent's height is actually known. */
+.shell { display: flex; height: 100dvh; }
 
-.sidebar { flex:none; width:236px; display:flex; flex-direction:column;
-           /* Its own scroll once there are more tools than fit the window. */
-           overflow-y:auto;
-           padding:14px 12px; border-right:1px solid var(--field-br);
-           background:color-mix(in srgb, var(--fg) 4%, var(--bg));
-           transition:width .18s; }
-/* Collapsed keeps the icons and drops the labels — the nav stays usable and the
-   app's structure stays on screen. It is not a hamburger. */
-:root[data-sidebar="collapsed"] .sidebar { width:62px; padding:14px 8px; }
+.sidebar { flex: none; width: 220px; display: flex; flex-direction: column;
+           overflow-y: auto; padding: 16px 12px; border-right: 1px solid var(--line);
+           transition: width .18s; }
+/* Collapsed, not hidden: a strip of icons keeps the app's structure on screen. */
+:root[data-sidebar="collapsed"] .sidebar { width: 62px; padding: 16px 8px; }
 :root[data-sidebar="collapsed"] .nav-label,
 :root[data-sidebar="collapsed"] .brand-name,
-:root[data-sidebar="collapsed"] .nav-group-label,
-:root[data-sidebar="collapsed"] .account-who { display:none; }
+:root[data-sidebar="collapsed"] .nav-group-label { display: none; }
 
-/* Brand row: mark, name, and the collapse control at the far end. Collapsed it
-   stacks, because a 62px column has no far end. */
-.brand { display:flex; align-items:center; gap:10px; padding:6px 8px 16px; }
-.brand-mark { display:grid; place-items:center; flex:none; width:24px; height:24px;
-              color:var(--accent); }
-.brand-mark svg { width:21px; height:21px; }
-.brand-name { font-size:15px; font-weight:600; letter-spacing:-.01em; }
-.collapse-btn { margin-left:auto; display:grid; place-items:center; flex:none;
-                width:28px; height:28px; padding:0; border:0; border-radius:8px;
-                cursor:pointer; background:none; color:var(--muted);
-                transition:background .15s, color .15s; }
-.collapse-btn:hover { background:var(--field-bg); color:var(--fg); }
-.collapse-btn svg { width:17px; height:17px; transition:transform .18s; }
-:root[data-sidebar="collapsed"] .brand { flex-direction:column; gap:12px; padding:6px 0 14px; }
-:root[data-sidebar="collapsed"] .collapse-btn { margin:0; }
-:root[data-sidebar="collapsed"] .collapse-btn svg { transform:scaleX(-1); }
+/* The wordmark, gatekeeper's: mono, second half in the accent. Collapsed there
+   is no room for a word, so the house stands in for it. */
+.brand { display: flex; align-items: center; gap: 8px; padding: 4px 6px 18px 8px; }
+.brand-name { font: 600 13px var(--mono); letter-spacing: .12em; }
+.brand-name b { color: var(--accent); font-weight: 600; }
+.brand-mark { display: none; place-items: center; width: 24px; height: 24px;
+              color: var(--accent); }
+.brand-mark svg { width: 20px; height: 20px; }
+.collapse-btn { margin-left: auto; display: grid; place-items: center; flex: none;
+                width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px;
+                cursor: pointer; background: none; color: var(--muted);
+                transition: background .15s, color .15s; }
+.collapse-btn:hover { background: var(--panel); color: var(--ink); }
+.collapse-btn svg { width: 17px; height: 17px; transition: transform .18s; }
+:root[data-sidebar="collapsed"] .brand { flex-direction: column; gap: 12px; padding: 4px 0 16px; }
+:root[data-sidebar="collapsed"] .brand-mark { display: grid; }
+:root[data-sidebar="collapsed"] .collapse-btn { margin: 0; }
+:root[data-sidebar="collapsed"] .collapse-btn svg { transform: scaleX(-1); }
 
-/* A named group of tools. The label is the heading; collapsed, the rule takes
-   its place, so a group still reads as a group with no words left. */
-.nav-group { display:flex; flex-direction:column; gap:2px; margin-bottom:18px; }
-.nav-group-label { padding:0 10px 6px; font-size:11px; font-weight:600;
-                   letter-spacing:.04em; color:var(--muted); }
-.nav-group-rule { display:none; height:1px; margin:2px 10px 8px;
-                  background:var(--field-br); }
-:root[data-sidebar="collapsed"] .nav-group-rule { display:block; }
-:root[data-sidebar="collapsed"] .nav-group:first-child .nav-group-rule { display:none; }
+/* Groups: a heading while there is room for words, a short rule in its place
+   when collapsed, so a group still reads as a group. */
+.sidebar nav { flex: 1; }
+.nav-group { display: flex; flex-direction: column; gap: 2px; margin-bottom: 18px; }
+.nav-group-label { padding: 0 10px 6px; font: 400 11px var(--mono);
+                   letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.nav-group-rule { display: none; height: 1px; margin: 2px 10px 8px; background: var(--line); }
+:root[data-sidebar="collapsed"] .nav-group-rule { display: block; }
+:root[data-sidebar="collapsed"] .nav-group:first-child .nav-group-rule { display: none; }
 
-.nav-item { display:flex; align-items:center; gap:11px; padding:9px 10px;
-            border-radius:9px; font-size:14px; font-weight:450;
-            color:var(--muted); text-decoration:none; white-space:nowrap;
-            transition:background .15s, color .15s; }
-.nav-item:hover { background:var(--field-bg); color:var(--fg); }
-/* The current tool: the icon takes the accent and the label goes solid. No
-   filled pill — with one item per group a block of colour reads as a button
-   rather than as "you are here". */
-.nav-item.on { color:var(--fg); font-weight:600; }
-.nav-item.on .nav-icon { color:var(--accent); }
-.nav-icon { display:grid; place-items:center; flex:none; width:20px; height:20px; }
-.nav-icon svg { width:19px; height:19px; }
-:root[data-sidebar="collapsed"] .nav-item { justify-content:center; padding:9px 0; }
+.nav-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+            border-radius: 8px; font-size: 14px; color: var(--muted);
+            text-decoration: none; white-space: nowrap;
+            transition: background .15s, color .15s; }
+.nav-item:hover { background: var(--panel); color: var(--ink); }
+/* "You are here" is weight and an accent icon, not a filled pill — with one item
+   per group a block of colour reads as a button. */
+.nav-item.on { color: var(--ink); font-weight: 600; }
+.nav-item.on .nav-icon { color: var(--accent); }
+.nav-icon { display: grid; place-items: center; flex: none; width: 20px; height: 20px; }
+.nav-icon svg { width: 18px; height: 18px; }
+:root[data-sidebar="collapsed"] .nav-item { justify-content: center; padding: 8px 0; }
 
-/* Pushed to the bottom: the last thing in the column, as in every app that has
-   one, and out of the header where it was competing with the page title. */
-.sidebar nav { flex:1; }
-.account { margin-top:auto; display:flex; align-items:center; gap:10px;
-           padding:10px 8px 4px; border-top:1px solid var(--field-br); }
-.avatar { display:grid; place-items:center; flex:none; width:32px; height:32px;
-          border-radius:50%; font:600 12px/1 system-ui,sans-serif; color:#fff;
-          background:var(--accent); }
-.account-who { display:flex; flex-direction:column; min-width:0; }
-.account-name { font-size:13px; font-weight:600; overflow:hidden;
-                text-overflow:ellipsis; white-space:nowrap; }
-.account-sub { font-size:11.5px; color:var(--muted); }
-:root[data-sidebar="collapsed"] .account { justify-content:center; padding:10px 0 4px; }
+.pane { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 
-.pane { flex:1; min-width:0; display:flex; flex-direction:column; }
+header { padding: 16px 24px 10px; display: flex; align-items: center; gap: 12px; }
+header .spacer { flex: 1; }
+/* The page's only <h1>. Reset because an <h1> arrives with browser margins. */
+.page-title { margin: 0; font-weight: 800; font-size: 22px; letter-spacing: -.02em;
+              line-height: 1; }
 
-/* Header, .spacer and .theme-toggle are tv-webui's, verbatim. */
-header { padding:16px 20px; font-size:18px; font-weight:600;
-         display:flex; align-items:center; gap:12px; }
-header .spacer { flex:1; }
-/* The page's only <h1>, living in the header bar rather than repeated below it.
-   Reset because an <h1> arrives with browser margins and a size of its own. */
-.page-title { margin:0; font-size:clamp(18px,2.4vw,22px); font-weight:600;
-              letter-spacing:-.015em; }
-
-.theme-toggle { display:grid; place-items:center; width:38px; height:38px;
-                padding:0; border-radius:999px; cursor:pointer;
-                background:var(--field-bg); border:1px solid var(--field-br);
-                color:var(--fg); transition:background .18s, transform .1s; }
-.theme-toggle:hover { background:var(--accent); color:#fff; }
-.theme-toggle:active { transform:scale(.92); }
-.theme-toggle svg { width:19px; height:19px; display:none; }
+/* Gatekeeper's theme button: a bare icon, no chip around it. */
+.theme-toggle { display: grid; place-items: center; width: 32px; height: 32px;
+                padding: 0; border: 0; border-radius: 10px; cursor: pointer;
+                background: none; color: var(--ink); }
+.theme-toggle:hover { opacity: .7; }
+.theme-toggle svg { width: 17px; height: 17px; display: none; }
 .theme-toggle[data-val="light"] .i-light,
-.theme-toggle[data-val="dark"]  .i-dark { display:block; }
+.theme-toggle[data-val="dark"]  .i-dark { display: block; }
 
-/* The pane fills the window, and the workbench fills what is left under the
-   header — which is what lets the lists inside be "as tall as there is room for"
-   without a magic number standing in for the header's height. */
-.content { flex:1; min-height:0; display:flex; flex-direction:column;
-           padding:6px 20px 20px; }
-.lede { margin:0 0 22px; font-size:14px; line-height:1.55; color:var(--muted); }
+/* A flex column filling what the header left, which is what lets the lists
+   inside be "as tall as there is room for" without a magic number. */
+.content { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px;
+           padding: 0 24px 8px; }
+.lede { margin: 0; font: 400 12px/1.5 var(--mono); color: var(--muted); }
+.lede b { color: var(--ink); font-weight: 600; }
 
-/* Three panels — the controls, what is waiting, what came out — inside **one**
-   surface rather than three floating boxes. That is what lets the rules between
-   them run the full height: a border on a separate card is only ever as tall as
-   that card, and with three different lengths of content the lines would stop at
-   three different points.
-   Flex rather than a grid with :has() rules: a panel that is `hidden` simply
-   stops participating, so the row is one, two or three columns depending on how
-   far through the job the user is, with nothing to declare per case.
-   Stacked below 1000px, where a vertical rule has nothing to divide. */
-/* max-height rather than flex:1. Filling the window meant a workbench the full
-   height of the screen even with two files in it, and two hundred pixels of
-   empty panel under a short list. Sized to its content instead, it stops growing
-   when it reaches the bottom of the window — and that is the point at which the
-   lists inside start scrolling. `100%` and not a vh figure minus a guess at the
-   header: .content is already a flex column filling what the header left. */
-.workbench { max-height:100%; min-height:0;
-             display:flex; flex-direction:column; gap:20px;
-             padding:20px; border-radius:14px;
-             background:color-mix(in srgb, var(--fg) 4%, var(--bg)); }
-.workbench > .card { flex:1 1 0; min-width:0; min-height:0; padding:0;
-                     border-radius:0; background:none; }
-/* The controls can be taller than a short window; they scroll rather than being
-   clipped by the panel they sit in. */
-.workbench > form.card { overflow-y:auto; }
-/* An empty list takes no space at all. Left as a flex:1 child it split the panel
-   with the empty state beside it, so the message sat in the middle of its own
-   half rather than in the middle of the panel. */
-.picks:empty, .result-list:empty { display:none; }
-
-/* Centred in the panel it stands in. Tucked under the heading it read as a
-   caption for the list that was not there; in the middle of the empty space it
-   reads as the state of the panel. */
-.empty { flex:1; min-height:0; display:grid; place-items:center; text-align:center;
-         margin:0; padding:24px 0; font-size:13px; color:var(--muted); }
-.empty[hidden] { display:none; }
-.results-bar[hidden], .queue-clear[hidden] { display:none; }
-.workbench > .card + .card { border-top:1px solid var(--field-br); padding-top:20px; }
+/* ---- Workbench ------------------------------------------------------------
+   Settings on the left, the one file list on the right, on one panel so the rule
+   between them runs the full height. Sized to its content and capped at the
+   window: once it reaches the bottom, the list inside starts scrolling instead
+   of the page growing. Stacked below 1000px. */
+.workbench { max-height: 100%; min-height: 0; display: flex; flex-direction: column;
+             border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
+.settings { display: flex; flex-direction: column; gap: 14px; padding: 16px 18px;
+            overflow-y: auto; }
+.files { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column;
+         gap: 10px; padding: 16px 20px; border-top: 1px solid var(--line); }
 
 @media (min-width: 1000px) {
-  /* stretch, not flex-start: each panel takes the row's full height, which is
-     the only way the dividing rule reaches the bottom of the tallest one. */
-  .workbench { flex-direction:row; align-items:stretch; gap:0; }
-  .workbench > .card { padding:0 20px; }
-  .workbench > .card:first-child { padding-left:0; }
-  .workbench > .card:last-child { padding-right:0; }
-  .workbench > .card + .card { border-top:0; padding-top:0;
-                               border-left:1px solid var(--field-br); }
-  /* The controls carry the most: a drop zone, two quality options, a button. */
-  .workbench > form.card { flex:1.15 1 0; }
+  .workbench { flex-direction: row; flex: 1; }
+  .settings { flex: none; width: 300px; }
+  .files { border-top: 0; border-left: 1px solid var(--line); }
 }
 
-.panel-head { display:flex; align-items:center; gap:12px; margin-bottom:12px; }
-.panel-head h2 { margin:0; font-size:13px; font-weight:600; }
+/* Labels are small mono capitals, gatekeeper's kicker style. */
+.field { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; border: 0; }
+.field > label, .field > legend, .panel-head h2 {
+  padding: 0; margin: 0; font: 400 11px var(--mono); letter-spacing: .08em;
+  text-transform: uppercase; color: var(--muted); }
+.field > legend { margin-bottom: 6px; }
+.hint { font: 400 11px var(--mono); color: var(--muted); }
 
-.queue, .results { display:flex; flex-direction:column; min-width:0; }
-.queue-clear { margin-left:auto; padding:4px 10px; border:0; border-radius:8px;
-               cursor:pointer; background:none; color:var(--muted);
-               font:500 12px system-ui,sans-serif; transition:background .15s, color .15s; }
-.queue-clear:hover { background:var(--field-bg); color:var(--fg); }
-/* The list takes whatever height its panel has and scrolls inside it. It used to
-   be capped at 46vh, which on a tall window left the panel two hundred pixels
-   shorter than the two beside it, with nothing in the gap. The page still never
-   grows: twenty files scroll here rather than stretching the workbench. */
-.queue .picks { flex:1; min-height:0; flex-direction:column; flex-wrap:nowrap;
-                gap:6px; margin:0; overflow-y:auto;
-                /* Room for the scrollbar so it never sits on top of a chip. */
-                padding-right:8px; }
-.queue .pick { max-width:none; }
-.queue .pick-name { flex:1; }
+/* Drop zone: the real file input is stretched invisibly over the box, so a
+   click anywhere opens the picker and the keyboard still reaches it. */
+.drop { position: relative; display: flex; flex-direction: column; align-items: center;
+        gap: 5px; padding: 18px 14px; border: 1.5px dashed var(--line);
+        border-radius: 10px; background: var(--bg); cursor: pointer; text-align: center;
+        transition: border-color .15s, background .15s; }
+.drop:hover, .drop.drag { border-color: var(--accent);
+        background: color-mix(in srgb, var(--accent) 8%, var(--bg)); }
+.drop input { position: absolute; inset: 0; width: 100%; height: 100%;
+        opacity: 0; cursor: pointer; }
+.drop:has(input:focus-visible) { outline: 3px solid var(--accent); outline-offset: 2px; }
+.drop-icon { color: var(--muted); }
+.drop-icon svg { width: 22px; height: 22px; }
+.drop-text { font-size: 13.5px; font-weight: 500; }
+.drop.has-file .drop-icon { color: var(--accent); }
 
-/* ---- Cards and fields ----------------------------------------------------- */
-/* No border: with three panels side by side, three outlines made a page of
-   boxes. The surface tint alone is enough to say where one ends. */
-.card { padding:20px; border:0; border-radius:14px;
-        background:color-mix(in srgb, var(--fg) 4%, var(--bg)); }
-.field { margin:0 0 20px; padding:0; border:0; }
-.field > label, .field > legend { display:block; padding:0; margin:0 0 8px;
-        font-size:13px; font-weight:600; }
-.hint { font-size:12px; font-weight:400; color:var(--muted); }
+/* A drag anywhere over the window is accepted, so the window has to say so —
+   otherwise "drop anywhere" is a secret. */
+body.dragging { outline: 2px dashed var(--accent); outline-offset: -8px; }
 
-/* File picker. The real input covers the box so a click anywhere opens it and
-   the keyboard still reaches it; JS adds .has-file once something is chosen. */
-.drop { position:relative; display:flex; flex-direction:column; align-items:center;
-        gap:6px; padding:26px 18px; border:1.5px dashed var(--field-br);
-        border-radius:12px; background:var(--field-bg); cursor:pointer;
-        text-align:center; transition:border-color .15s, background .15s; }
-.drop:hover, .drop.drag { border-color:var(--accent);
-        background:color-mix(in srgb, var(--accent) 8%, var(--field-bg)); }
-.drop input { position:absolute; inset:0; width:100%; height:100%;
-        opacity:0; cursor:pointer; }
-/* The input is invisible, so its focus ring would be too — draw it on the box. */
-.drop:has(input:focus-visible) { outline:3px solid var(--accent); outline-offset:2px; }
-.drop-icon { color:var(--muted); }
-.drop-icon svg { width:26px; height:26px; }
-.drop-text { font-size:13.5px; font-weight:500; word-break:break-all; }
-.drop.has-file .drop-icon { color:var(--accent); }
+/* Quality cards, stacked: side by side, each one wrapped to five lines. */
+.choices { display: flex; flex-direction: column; gap: 8px; }
+.choice { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px;
+          border: 1px solid var(--line); border-radius: 10px; background: var(--bg);
+          cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+.choice:hover { border-color: var(--muted); }
+.choice:has(input:checked) { border-color: var(--accent); box-shadow: 0 0 0 3px var(--glow); }
+.choice:has(input:focus-visible) { outline: 3px solid var(--accent); outline-offset: 2px; }
+/* Drawn rather than native: a native radio ignores color-scheme in places and
+   comes out dark on the light theme. */
+.choice input { appearance: none; -webkit-appearance: none; flex: none; margin: 2px 0 0;
+          width: 14px; height: 14px; border-radius: 50%; cursor: pointer;
+          border: 2px solid var(--line); background: var(--bg);
+          display: grid; place-items: center; }
+.choice input:checked { border-color: var(--accent); }
+.choice input:checked::after { content: ""; width: 6px; height: 6px; border-radius: 50%;
+          background: var(--accent); }
+.choice-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.choice-name { font-size: 13.5px; font-weight: 600; }
+.choice-desc { font-size: 12px; line-height: 1.4; color: var(--muted); }
+.choice-detail { font: 400 10.5px/1.4 var(--mono); color: var(--muted);
+          font-variant-numeric: tabular-nums; }
 
-/* Target quality: boxed radio chips, the same shape as tv-webui's .fcheck rows.
-   Drawn by pdf.js from presets.js. */
-.choices { display:grid; gap:8px; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); }
-.choice { display:flex; align-items:flex-start; gap:10px; padding:12px 14px;
-          border-radius:11px; background:var(--field-bg); cursor:pointer;
-          transition:background .15s; }
-.choice:hover { background:color-mix(in srgb, var(--fg) 10%, var(--field-bg)); }
-.choice:has(input:checked) { background:color-mix(in srgb, var(--accent) 15%, var(--field-bg)); }
-.choice:has(input:focus-visible) { outline:3px solid var(--accent); outline-offset:2px; }
-/* Drawn by hand: the native radio follows the OS color-scheme and shows up dark
-   on the light theme. Same trick as tv-webui's checkboxes. */
-.choice input { appearance:none; -webkit-appearance:none; flex:none; margin:2px 0 0;
-          width:16px; height:16px; border-radius:50%; cursor:pointer;
-          border:2px solid var(--field-br); background:var(--field-bg);
-          display:grid; place-items:center; transition:border-color .12s; }
-.choice input:checked { border-color:var(--accent); }
-.choice input:checked::after { content:""; width:8px; height:8px; border-radius:50%;
-          background:var(--accent); }
-.choice-body { display:flex; flex-direction:column; gap:3px; min-width:0; }
-.choice-name { font-size:13.5px; font-weight:600; }
-.choice-desc { font-size:12px; line-height:1.4; color:var(--muted); }
-/* The numbers, for whoever wants them. Tabular so the two presets' figures line
-   up against each other when read side by side. */
-.choice-detail { font-size:11.5px; line-height:1.4; color:var(--muted);
-          opacity:.8; font-variant-numeric:tabular-nums; }
+/* ---- Buttons --------------------------------------------------------------- */
+.primary { align-self: flex-start; display: inline-flex; align-items: center; gap: 8px;
+        padding: 8px 14px; border: 0; border-radius: 8px; background: var(--accent);
+        color: var(--on-accent); font: 600 12px var(--mono); letter-spacing: .04em;
+        cursor: pointer; }
+.primary:hover:not(:disabled) { filter: brightness(1.07); }
+.primary:disabled { opacity: .5; cursor: not-allowed; }
 
-/* While a file is over the window: the whole page is a target, so the whole page
-   has to say so — otherwise "drop anywhere" is a secret. The dashed box still
-   lights up as the place to aim. */
-body.dragging { outline:2px dashed var(--accent); outline-offset:-8px; }
-body.dragging .drop { border-color:var(--accent);
-        background:color-mix(in srgb, var(--accent) 12%, var(--field-bg)); }
+/* Secondary: these act on what is already done, so they stay quieter than
+   Compress. */
+.ghost { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px;
+         border: 1px solid var(--line); border-radius: 8px; background: none;
+         color: var(--muted); font: 400 12px var(--mono); letter-spacing: .04em;
+         cursor: pointer; }
+.ghost:hover:not(:disabled) { border-color: var(--ink); color: var(--ink); }
+.ghost:disabled { opacity: .45; cursor: not-allowed; }
+.ghost svg { width: 14px; height: 14px; }
 
-/* One chip per picked file. Sits below the drop box rather than inside it: the
-   file input covers that box invisibly and would eat every click meant for a
-   chip's remove button. */
-.picks { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0 0; padding:0;
-         list-style:none; }
-.picks:empty { display:none; }
-.pick { display:inline-flex; align-items:center; gap:8px; max-width:100%;
-        padding:7px 8px 7px 11px; border-radius:10px; font-size:12.5px;
-        background:var(--field-bg); border:1px solid var(--field-br); }
-.pick-icon { display:grid; place-items:center; flex:none; color:var(--accent); }
-.pick-icon svg { width:15px; height:15px; }
-.pick-name { min-width:0; overflow:hidden; text-overflow:ellipsis;
-             white-space:nowrap; font-weight:500; }
-.pick-size { flex:none; color:var(--muted); }
-.pick-drop { display:grid; place-items:center; flex:none; width:20px; height:20px;
-             padding:0; border:0; border-radius:6px; cursor:pointer;
-             background:none; color:var(--muted); transition:background .15s, color .15s; }
-.pick-drop:hover { background:#e05555; color:#fff; }
-.pick-drop svg { width:12px; height:12px; }
-/* Flagged where the file is, rather than only at submit. */
-.pick.too-big { border-color:#e05555; background:#e0555518; }
-.pick.too-big .pick-size { color:#ff6b6b; font-weight:600; }
+.quiet { margin-left: auto; padding: 4px 8px; border: 0; border-radius: 8px;
+         background: none; color: var(--muted); font: 400 12px var(--mono); cursor: pointer; }
+.quiet:hover:not(:disabled) { color: var(--ink); }
+.quiet:disabled { opacity: .45; cursor: not-allowed; }
 
+/* Phone-only parts, hidden on wider screens. */
+.quality-note, .viewer-which { display: none; }
 
-.primary { display:inline-flex; align-items:center; justify-content:center; gap:8px;
-        min-height:42px; padding:11px 20px; border:1px solid var(--accent);
-        border-radius:11px; background:var(--accent); color:#fff;
-        font:600 14px system-ui,sans-serif; text-decoration:none; cursor:pointer;
-        transition:filter .15s; }
-.primary:hover { filter:brightness(1.1); }
-.primary:disabled { opacity:.55; cursor:not-allowed; filter:none; }
+.fineprint { margin: 0; font-size: 12px; line-height: 1.5; color: var(--muted); }
+/* Under the panel, on one line with the gateway's pill (fixed 8px from the
+   bottom right, ~26px tall): same height, and room left on the right for it. */
+.colophon { margin: 0; padding-right: 240px; font: 400 10.5px/26px var(--mono);
+            color: var(--muted); }
+.colophon a { color: var(--muted); }
+.colophon a:hover { color: var(--ink); }
 
-/* What the one fixed recipe actually does, and the licence the vendored
-   Ghostscript is served under. Quiet: needed once, not on every visit. */
-.preset { display:flex; flex-direction:column; gap:3px; padding:12px 14px;
-          border-radius:11px; background:var(--field-bg);
-          border-left:3px solid var(--accent); }
-.preset-name { font-size:13.5px; font-weight:600; }
-.preset-detail { font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; }
+/* Everything is frozen while a batch runs, and the form says so rather than
+   leaving controls that look live and do nothing. */
+.settings.busy .field { opacity: .5; }
 
-.fineprint { margin:14px 0 0; font-size:12px; line-height:1.5; color:var(--muted); }
-.colophon { margin:22px 0 0; font-size:11.5px; color:var(--muted); }
-.colophon a { color:var(--muted); }
-.colophon a:hover { color:var(--fg); }
+/* ---- The file list --------------------------------------------------------- */
+.panel-head { display: flex; align-items: center; gap: 10px; min-height: 28px; }
+.files-meta { font: 400 11px var(--mono); color: var(--muted); }
 
-/* Same red and placement as the login page's error line. No animation: this
-   re-renders on every failed attempt. */
-.err { margin:0 0 18px; padding:11px 14px; border-radius:11px;
-       border:1px solid #e0555566; background:#e0555518;
-       color:#ff6b6b; font-size:13px; }
+.results-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px;
+               padding: 8px 8px 8px 12px; border: 1px solid var(--line);
+               border-radius: 10px; background: var(--bg); }
+.selectall { display: flex; align-items: center; gap: 8px; font-size: 13px;
+             font-weight: 600; cursor: pointer; user-select: none; }
+.selectall:has(input:disabled) { opacity: .5; cursor: default; }
+.results-count { font: 400 11px var(--mono); color: var(--muted); }
+.results-total { font: 400 12px var(--mono); font-variant-numeric: tabular-nums; }
+.results-total b { color: var(--ok); font-weight: 600; }
+.results-actions { margin-left: auto; display: flex; gap: 8px; }
 
-/* While a batch runs the inputs are inert (see lockForm). Dimmed so the page
-   says so rather than leaving controls that look live and do nothing. */
-.card.busy .field { opacity:.5; }
-.queue[inert] { opacity:.5; }
-
-/* ---- Results -------------------------------------------------------------- */
-.results { display:flex; flex-direction:column; min-width:0; }
-
-/* No border and no fill: this is a row of controls, not a panel. The rules
-   around it were fighting the result cards below for attention. */
-.results-bar { display:flex; align-items:center; gap:14px; flex-wrap:wrap;
-               margin-bottom:12px; }
-.selectall { display:flex; align-items:center; gap:9px; font-size:13px;
-             font-weight:600; cursor:pointer; user-select:none; }
-.selectall:has(input:disabled) { opacity:.5; cursor:default; }
-.results-count { font-size:13px; color:var(--muted); }
-/* The batch outcome. Pushed to the right so the selection reads as one group on
-   the left and this as a separate, persistent fact. */
-.results-total { flex-basis:100%; font-size:13px; color:var(--muted);
-                 font-variant-numeric:tabular-nums; }
-.results-actions { flex-basis:100%; display:flex; gap:8px; flex-wrap:wrap; }
-
-/* Drawn by hand: the native checkbox follows the OS colour-scheme and shows up
-   dark on the light theme. Same trick as tv-webui's. */
-.check { appearance:none; -webkit-appearance:none; flex:none; margin:0;
-         width:16px; height:16px; border-radius:5px; cursor:pointer;
-         border:2px solid var(--field-br); background:var(--field-bg);
-         display:grid; place-items:center; transition:background .12s, border-color .12s; }
-.check:checked, .check:indeterminate { background:var(--accent); border-color:var(--accent); }
-.check:checked::after { content:""; width:4px; height:8px; margin-top:-2px;
-         border:solid #fff; border-width:0 2px 2px 0; transform:rotate(45deg); }
+/* Drawn rather than native, so the box is not dark on the light theme. */
+.check { appearance: none; -webkit-appearance: none; flex: none; margin: 0;
+         width: 16px; height: 16px; border-radius: 4px; cursor: pointer;
+         border: 2px solid var(--line); background: var(--bg);
+         display: grid; place-items: center; }
+.check:checked, .check:indeterminate { background: var(--accent); border-color: var(--accent); }
+.check:checked::after { content: ""; width: 4px; height: 8px; margin-top: -2px;
+         border: solid var(--on-accent); border-width: 0 2px 2px 0; transform: rotate(45deg); }
 /* "Some, not all" — the header must not claim more than is true. */
-.check:indeterminate::after { content:""; width:8px; height:2px; background:#fff; }
-.check:disabled { opacity:.4; cursor:not-allowed; }
+.check:indeterminate::after { content: ""; width: 8px; height: 2px; background: var(--on-accent); }
+.check:disabled { opacity: .4; cursor: not-allowed; }
 
-/* Secondary to the Compress button above: these act on what is already done. */
-.ghost { display:inline-flex; align-items:center; gap:7px; min-height:34px;
-         padding:7px 14px; border:1px solid var(--field-br); border-radius:10px;
-         background:transparent; color:var(--fg); cursor:pointer;
-         font:600 13px system-ui,sans-serif; transition:background .15s; }
-.ghost:hover:not(:disabled) { background:var(--field-bg); }
-.ghost:disabled { opacity:.45; cursor:not-allowed; }
-.ghost svg { width:15px; height:15px; }
-/* Same as the queue's list: fills its panel, scrolls inside it, and never makes
-   the page taller. */
-.result-list { flex:1; min-height:0; margin:0; padding:0; list-style:none;
-               display:flex; flex-direction:column; gap:8px;
-               overflow-y:auto; padding-right:8px; }
+/* Fills the panel and scrolls inside it; the page never grows. */
+.file-list { flex: 1; min-height: 0; margin: 0; padding: 0 6px 0 0; list-style: none;
+             overflow-y: auto; }
+.file-list:empty { display: none; }
 
-/* One row per file. The columns are named so the grid reads as the row does:
-   name, status, the bar, and the way to get the file. It collapses to two rows
-   on a narrow screen rather than squeezing four columns into a phone. */
-/* The outcome sits at the end of the row, beside the action, rather than in a
-   gutter on the left: a tick is the answer to "did this work", and the answer
-   belongs after the question, not before it. */
-.row { display:grid; gap:2px 10px; align-items:start;
-       grid-template-columns:16px minmax(0,1fr) auto;
-       grid-template-areas:"sel name   name"
-                           "sel status status"
-                           "sel detail detail"
-                           "sel get    mark";
-       padding:12px 16px; border:1px solid var(--field-br); border-radius:12px;
-       background:color-mix(in srgb, var(--fg) 3%, var(--bg)); }
-/* The whole row tints, not just the box: the tick can sit 300px from the button
-   it governs, and a 16px change that far away is not an answer to "what will
-   Download act on?". */
-.row.selected { background:color-mix(in srgb, var(--accent) 12%, var(--bg));
-                border-color:color-mix(in srgb, var(--accent) 45%, var(--field-br)); }
-.row-sel { grid-area:sel; margin-top:3px; }
-.row-name   { grid-area:name; font-size:13.5px; font-weight:600;
-              overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* One row per file for its whole life: picked, queued, working, done or failed.
+   The name gets the spare width; size and actions keep theirs. */
+.row { display: grid; gap: 3px 12px; align-items: center;
+       grid-template-columns: 16px 16px minmax(0, 1fr) auto auto;
+       grid-template-areas: "sel mark name size actions"
+                            ".   .    status status status";
+       padding: 10px 12px; border-bottom: 1px dashed var(--line); }
+/* The whole row tints, not just the box: the tick can sit far from the button
+   it governs. */
+.row.selected { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.row-sel { grid-area: sel; }
+.row-name { grid-area: name; font-size: 13.5px; font-weight: 500;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Tabular figures so "6.4 MB → 1.4 MB" lines up down a column of files. */
-.row-status { grid-area:status; font-size:13px; color:var(--fg);
-              font-variant-numeric:tabular-nums; }
-.row-detail { grid-area:detail; font-size:12px; color:var(--muted); }
-/* Spinner while the worker has it, then the outcome. One element, three
-   states, so a row cannot show a tick and a spinner at once. */
-.row-mark { grid-area:mark; justify-self:end; align-self:center; margin-top:5px;
-            width:16px; height:16px; display:grid; place-items:center;
-            box-sizing:border-box; }
-/* Spinning means a worker has it. A queued row shows a still ring instead —
-   with three workers, three rows spin and the rest wait, which is the truth. */
-.row.working .row-mark {
-            border:2px solid color-mix(in srgb, var(--fg) 20%, transparent);
-            border-top-color:var(--accent); border-radius:50%;
-            animation:rowspin .8s linear infinite; }
-.row.pending:not(.working) .row-mark {
-            border:2px solid color-mix(in srgb, var(--fg) 14%, transparent);
-            border-radius:50%; }
-@keyframes rowspin { to { transform:rotate(1turn); } }
-.row.done .row-mark::after   { content:"\2713"; color:#3ba55d; font:700 13px/1 system-ui,sans-serif; }
-.row.failed .row-mark::after { content:"\2715"; color:#e05555; font:700 12px/1 system-ui,sans-serif; }
+.row-size { grid-area: size; font: 400 11.5px var(--mono); white-space: nowrap;
+            font-variant-numeric: tabular-nums; text-align: right; }
+.row-size b { color: var(--ok); font-weight: 600; }
+.row-status { grid-area: status; font: 400 11px var(--mono); color: var(--muted); }
+.row-status:empty { display: none; }
+.row-status i { font-family: var(--display); font-size: 12px; }
+.row-actions { grid-area: actions; display: flex; align-items: center; gap: 12px;
+               justify-content: flex-end; }
+.row-preview, .row-get { padding: 0 0 1px; border: 0; border-bottom: 1px solid var(--line);
+               background: none; color: var(--ink); font: 400 11px var(--mono);
+               text-decoration: none; cursor: pointer; }
+.row-preview:hover, .row-get:hover { border-color: var(--ink); }
+.row-drop { display: grid; place-items: center; width: 22px; height: 22px; padding: 0;
+            border: 0; border-radius: 6px; cursor: pointer; background: none;
+            color: var(--muted); }
+.row-drop:hover:not(:disabled) { background: var(--bad); color: var(--bg); }
+.row-drop:disabled { opacity: .4; cursor: not-allowed; }
+.row-drop svg { width: 12px; height: 12px; }
+
+/* The mark: a file while picked, a still ring while queued (with three workers,
+   three rows spin and the rest wait, which is the truth), a spinner while a
+   worker has it, then a tick or a cross. */
+.row-mark { grid-area: mark; width: 16px; height: 16px; display: grid; place-items: center; }
+.row.pending .row-mark::after { content: ""; width: 10px; height: 13px; border-radius: 2px;
+            border: 1.5px solid var(--accent); }
+.row.queued .row-mark { border: 2px solid var(--line); border-radius: 50%; }
+.row.working .row-mark { border: 2px solid var(--line); border-top-color: var(--accent);
+            border-radius: 50%; animation: rowspin .8s linear infinite; }
+@keyframes rowspin { to { transform: rotate(1turn); } }
+.row.done .row-mark::after   { content: "\2713"; color: var(--ok); font: 700 13px/1 var(--display); }
+.row.failed .row-mark::after { content: "\2715"; color: var(--bad); font: 700 12px/1 var(--display); }
+.row.working .row-status, .row.queued .row-status { color: var(--accent); }
+.row.failed .row-status, .row.too-big .row-status, .row.too-big .row-size { color: var(--bad); }
+.row.too-big .row-mark::after { border-color: var(--bad); }
+
 /* A spinner is decoration; someone who asked for less motion should not get a
    thing rotating at them for the length of a 1000-image PDF. */
 @media (prefers-reduced-motion: reduce) {
-  .row.working .row-mark { animation:none; }
+  .row.working .row-mark { animation: none; }
 }
-.row-get    { font-size:13px; font-weight:600; text-decoration:none;
-              color:var(--accent); white-space:nowrap; }
-.row-get:hover { text-decoration:underline; }
 
-/* Nothing to draw to scale until it is done, and a red row's bar would read as
-   a progress bar stuck at zero. */
-.row.failed { border-color:#e0555566; background:#e0555514; }
-.row.failed .row-status { color:#ff6b6b; }
-
+/* An empty list says how the page works: it is the first thing a new visitor
+   sees, and the widest panel. */
+.empty { flex: 1; min-height: 0; display: grid; place-items: center; padding: 24px 0; }
+.steps { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column;
+         gap: 14px; width: min(100%, 340px); }
+.steps li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 2px 12px; }
+.steps b { font-size: 14px; font-weight: 600; }
+.steps li > span:last-child { grid-column: 2; font: 400 11px var(--mono); color: var(--muted); }
+.step-n { grid-row: span 2; width: 28px; height: 28px; border-radius: 50%;
+          border: 1px solid var(--line); display: grid; place-items: center;
+          font: 600 11px var(--mono); color: var(--accent); }
 
 /* ---- Preview ---------------------------------------------------------------
    Full screen, because the point is to look closely at two documents at once and
    anything smaller defeats it. */
-.viewer { position:fixed; inset:0; z-index:600; display:flex; flex-direction:column;
-          background:var(--bg); }
-.viewer[hidden] { display:none; }
-body.viewing { overflow:hidden; }
+.viewer { position: fixed; inset: 0; z-index: 600; display: flex; flex-direction: column;
+          background: var(--bg); }
+body.viewing { overflow: hidden; }
 
-.viewer-bar { display:flex; align-items:center; gap:16px; flex-wrap:wrap;
-              padding:12px 16px; border-bottom:1px solid var(--field-br); }
-.viewer-name { font-size:14px; font-weight:600; overflow:hidden;
-               text-overflow:ellipsis; white-space:nowrap; min-width:0; }
-/* Centred between the name and the close button: it governs both panes, so it
-   should not sit above either one. */
-.viewer-zoom { margin:0 auto; display:inline-flex; padding:3px; border-radius:10px;
-               background:var(--field-bg); }
-.viewer-zoom button { padding:6px 12px; border:0; border-radius:7px; cursor:pointer;
-                      background:none; color:var(--muted);
-                      font:600 12.5px system-ui,sans-serif; }
-.viewer-zoom button[aria-pressed="true"] { background:var(--bg); color:var(--fg); }
-.viewer-close { display:grid; place-items:center; width:32px; height:32px; padding:0;
-                border:0; border-radius:8px; cursor:pointer; background:var(--field-bg);
-                color:var(--fg); font-size:14px; }
-.viewer-close:hover { background:#e05555; color:#fff; }
+.viewer-bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+              padding: 12px 20px; border-bottom: 1px solid var(--line);
+              background: var(--panel); }
+.viewer-name { font: 600 13px var(--mono); overflow: hidden; text-overflow: ellipsis;
+               white-space: nowrap; min-width: 0; }
+.viewer-zoom { margin-left: auto; display: inline-flex; border: 1px solid var(--line);
+               border-radius: 8px; overflow: hidden; }
+.viewer-zoom button { padding: 5px 10px; border: 0; border-right: 1px solid var(--line);
+                      background: none; color: var(--muted); font: 400 11px var(--mono);
+                      cursor: pointer; }
+.viewer-zoom button:last-child { border-right: 0; }
+.viewer-zoom button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
 
 /* minmax(0,1fr), not 1fr: a grid column's default minimum is its content, so a
-   page zoomed to 300% would widen its own column and squeeze the other pane —
-   the two documents would stop being shown at comparable sizes, which is the one
-   thing this window exists to do. */
-.viewer-panes { flex:1; min-height:0; display:grid; gap:1px;
-                grid-template-columns:minmax(0,1fr) minmax(0,1fr);
-                background:var(--field-br); }
-.viewer-pane { display:flex; flex-direction:column; min-width:0; min-height:0;
-               background:var(--bg); }
-.viewer-pane h3 { margin:0; padding:8px 14px; font-size:12px; font-weight:600;
-                  color:var(--muted); border-bottom:1px solid var(--field-br); }
-.viewer-pane h3 span { font-weight:400; font-variant-numeric:tabular-nums; }
-/* The recipe, not a measurement — set apart from the size beside it by style
-   rather than by brackets, which a preset name may already contain. */
-.pane-quality { color:var(--accent); font-style:italic; }
+   page zoomed to 300% would widen its own column and squeeze the other pane. */
+.viewer-panes { flex: 1; min-height: 0; display: grid; gap: 1px;
+                grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+                background: var(--line); }
+.viewer-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0;
+               background: var(--bg); }
+.viewer-pane h3 { margin: 0; display: flex; align-items: baseline; gap: 10px;
+                  padding: 10px 20px; font: 400 11px var(--mono); letter-spacing: .08em;
+                  text-transform: uppercase; color: var(--muted); }
+.viewer-pane h3 span { margin-left: auto; text-transform: none; letter-spacing: 0;
+                       color: var(--ink); font-variant-numeric: tabular-nums; }
+/* The recipe, not a measurement — set apart by style rather than brackets,
+   which a preset name may already contain. */
+.pane-quality { font-family: var(--display); font-size: 12px; text-transform: none;
+                letter-spacing: 0; color: var(--accent); }
 /* Both axes, and both are this page's own — which is the whole reason the panes
-   can be kept together. */
-.viewer-scroll { flex:1; min-height:0; overflow:auto; background:var(--field-bg);
-                 /* No scroll chaining: reaching the bottom of a pane must not
-                    start scrolling the page behind the overlay. */
-                 overscroll-behavior:contain; }
-/* A column of pages, centred, with the same gap a PDF viewer leaves. */
-.pv-doc { display:flex; flex-direction:column; align-items:center; gap:12px;
-          padding:12px; min-width:min-content; }
-.pv-page { flex:none; background:#fff; box-shadow:0 1px 6px rgb(0 0 0 / .35); }
-.pv-page canvas { display:block; }
+   can be kept together. No scroll chaining: reaching the bottom of a pane must
+   not start scrolling the page behind the overlay. */
+.viewer-scroll { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.pv-doc { display: flex; flex-direction: column; align-items: center; gap: 16px;
+          padding: 8px 20px 20px; min-width: min-content; }
+/* Paper is white in both themes: it is the document, not the page around it. */
+.pv-page { flex: none; background: #fff; box-shadow: 0 2px 10px var(--shadow); }
+.pv-page canvas { display: block; }
 /* Stacked on a phone: two PDF viewers side by side on 400px is neither. */
 @media (max-width: 800px) {
-  .viewer-panes { grid-template-columns:1fr; grid-template-rows:1fr 1fr; }
+  .viewer-panes { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
 }
 
-/* The two actions at the end of a result row. */
-.row-actions { grid-area:get; display:flex; align-items:center; gap:14px;
-               margin-top:5px; }
-.row-preview { padding:0; border:0; background:none; cursor:pointer;
-               color:var(--accent); font:600 13px system-ui,sans-serif; }
-.row-preview:hover, .row-get:hover { text-decoration:underline; }
-.row-preview[hidden], .row-get[hidden] { display:none; }
+/* ---- Toast notices: failures only -----------------------------------------
+   One card per message, the state colour only on the icon so the text stays
+   readable, and a × to dismiss. The popover's own UA styles (centred, bordered)
+   are reset; layout only applies while it is open, or it would override the
+   UA's display:none for a closed popover. */
+#notices:popover-open { position: fixed; inset: auto 24px 44px auto; margin: 0; padding: 0;
+           border: 0; background: none; overflow: visible; display: flex;
+           flex-direction: column; gap: 8px; align-items: flex-end;
+           width: max-content; max-width: min(440px, calc(100vw - 32px)); }
+.notice { display: flex; align-items: center; gap: 10px; padding: 6px 4px 6px 12px;
+          border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+          color: var(--ink); box-shadow: 0 8px 24px var(--shadow);
+          font: 400 12px/1.4 var(--mono); opacity: 0; transform: translateY(8px);
+          transition: opacity .2s, transform .2s; }
+.notice.in { opacity: 1; transform: none; }
+.notice .ni { flex: none; display: grid; place-items: center; width: 18px; height: 18px;
+              border-radius: 50%; font: 600 11px/1 var(--mono); color: var(--bg);
+              background: var(--accent); }
+.notice.success .ni { background: var(--ok); }
+.notice.error .ni { background: var(--bad); }
+.notice .nt { flex: 1; min-width: 0; padding: 4px 0; }
+.notice .nx { flex: none; display: grid; place-items: center; width: 32px; height: 32px;
+              padding: 0; border: 0; border-radius: 8px; background: none;
+              color: var(--muted); cursor: pointer; }
+.notice .nx:hover { color: var(--ink); }
+.notice .nx svg { width: 12px; height: 12px; }
+@media (prefers-reduced-motion: reduce) { .notice { transition: none; } }
 
-/* ---- Toast notices — tv-webui's, verbatim --------------------------------- */
-#notices { position:fixed; left:50%; bottom:24px; transform:translateX(-50%);
-           z-index:500; display:flex; flex-direction:column-reverse; gap:8px;
-           align-items:center; pointer-events:none; }
-.notice { pointer-events:auto; cursor:pointer; display:flex; align-items:center; gap:10px;
-          max-width:90vw; padding:11px 15px; border-radius:12px; font-size:13.5px; font-weight:500;
-          background:var(--bg); color:var(--fg); border:1px solid var(--field-br);
-          box-shadow:0 10px 34px rgba(0,0,0,.4); opacity:0; transform:translateY(12px);
-          transition:opacity .2s, transform .2s; }
-.notice.in { opacity:1; transform:translateY(0); }
-.notice .ni { flex:none; display:grid; place-items:center; width:22px; height:22px;
-              border-radius:50%; font:700 12px/1 system-ui,sans-serif; color:#fff;
-              background:var(--accent); }
-.notice.success .ni { background:#3ba55d; }
-.notice.error .ni { background:#e05555; }
+/* Read by screen readers, not shown. */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden;
+           clip-path: inset(50%); white-space: nowrap; }
 
-/* ---- Phones --------------------------------------------------------------- */
+/* ---- Phones ----------------------------------------------------------------
+   Not a squeezed desktop: one column that scrolls as a page, a slim top bar
+   instead of the sidebar, the main action pinned in the thumb zone, and every
+   tap target at least 44px (Apple's minimum; Google's is 48). */
 @media (max-width: 700px) {
-  .content { padding:6px 14px 28px; }
-  header { padding:14px; }
-  .card { padding:16px; }
-  .choices { grid-template-columns:1fr; }
-  .primary { width:100%; }
-  .choices { grid-template-columns:1fr; }
+  .shell { display: block; height: auto; }
+
+  /* The sidebar becomes a top bar: the wordmark only. The head script collapses
+     it below 700px, so the collapsed rules are overridden here, not relied on.
+     shortcut: no tool nav on phones; with one tool there is nowhere to go. Add
+     a menu when a second tool lands. */
+  .sidebar, :root[data-sidebar="collapsed"] .sidebar {
+    width: auto; height: 52px; flex-direction: row; align-items: center;
+    padding: 0 60px 0 16px; overflow: visible; border-right: 0;
+    border-bottom: 1px solid var(--line); background: var(--panel); }
+  .sidebar .brand, :root[data-sidebar="collapsed"] .brand {
+    flex-direction: row; padding: 0; }
+  :root .sidebar .brand-name { display: inline; }
+  :root .sidebar .brand-mark, .sidebar nav, .collapse-btn { display: none; }
+  .theme-toggle { position: absolute; top: 4px; right: 6px; width: 44px; height: 44px; }
+
+  header { padding: 16px 16px 6px; }
+  .content { padding: 0 16px 16px; gap: 16px; }
+  /* Room under the page for the pinned action bar. */
+  body { padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
+
+  /* No boxes inside boxes: the panel's frame goes, its sections stay. */
+  .workbench { border: 0; border-radius: 0; background: none; gap: 20px; max-height: none; }
+  .settings, .files { padding: 0; overflow: visible; border: 0; }
+  .file-list { overflow: visible; padding: 0; }
+
+  /* A button, not a drop zone: phones have no drag and drop. */
+  .drop { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 4px 8px;
+          min-height: 48px; padding: 10px 14px; border-radius: 12px; background: var(--panel); }
+  .drop-icon svg { width: 18px; height: 18px; }
+  .drop-text { font: 600 13px var(--mono); }
+  .drop .hint { flex-basis: 100%; }
+  .desk-only { display: none; }
+
+  /* Quality: the cards become an Email | Print switch; the note under it says
+     what the chosen one does. */
+  .choices { display: grid; grid-template-columns: 1fr 1fr; gap: 0; padding: 3px;
+             border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+  .choice { justify-content: center; align-items: center; min-height: 42px; padding: 0 8px;
+            border: 0; border-radius: 9px; background: none; box-shadow: none; }
+  .choice:has(input:checked) { background: var(--accent); box-shadow: none; }
+  .choice:has(input:checked) .choice-name { color: var(--on-accent); }
+  .choice input { position: absolute; opacity: 0; pointer-events: none; }
+  .choice-desc, .choice-detail { display: none; }
+  .choice-name { font-size: 13px; }
+  .quality-note { display: block; margin: 6px 0 0; font-size: 12px; line-height: 1.45;
+                  color: var(--muted); }
+  .fineprint { display: none; }
+
+  /* The pinned action bar: Compress until there is nothing left to do, then
+     Download and Share for what is done. A strip behind them keeps the list
+     from showing through. */
+  body::after { content: ""; position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+                height: calc(72px + env(safe-area-inset-bottom, 0px));
+                border-top: 1px solid var(--line); background: var(--panel); }
+  #go { position: fixed; z-index: 21; left: 16px; right: 16px;
+        bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+        min-height: 48px; justify-content: center; border-radius: 12px; font-size: 13px; }
+  .workbench:has(#resultsBar:not([hidden])):has(#go:disabled):not(:has(.settings.busy)) #go {
+        display: none; }
+  .workbench:has(#resultsBar:not([hidden])):has(#go:disabled):not(:has(.settings.busy))
+    .results-actions {
+        position: fixed; z-index: 21; left: 16px; right: 16px;
+        bottom: calc(12px + env(safe-area-inset-bottom, 0px)); margin: 0; }
+  .results-actions { margin-left: 0; flex-basis: 100%; }
+  .results-actions .ghost { flex: 1; justify-content: center; min-height: 48px;
+        border-radius: 12px; font-size: 13px; }
+  /* Share is what phones are for; it leads when it exists. */
+  #shareSelected { background: var(--accent); border-color: var(--accent);
+        color: var(--on-accent); font-weight: 600; }
+
+  .panel-head { min-height: 44px; }
+  .quiet { min-height: 44px; padding: 0 8px; }
+  .results-bar { padding: 0; border: 0; background: none; }
+  .selectall { min-height: 44px; }
+  .results-total { flex-basis: 100%; }
+  .check { width: 20px; height: 20px; }
+
+  /* Rows: one tap target per line, the list in one framed block. */
+  .file-list { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+  .row { grid-template-columns: 20px minmax(0, 1fr) auto;
+         grid-template-areas: "lead name   actions"
+                              "lead size   actions"
+                              "lead status actions";
+         gap: 2px 12px; min-height: 60px; padding: 8px 6px 8px 14px;
+         border-bottom: 1px solid var(--line); }
+  .row:last-child { border-bottom: 0; }
+  .row-sel, .row-mark { grid-area: lead; }
+  .row.done .row-mark, .row.done .row-status { display: none; }
+  .row-name { font-size: 14px; }
+  .row-size { text-align: left; color: var(--muted); }
+  .row-get { display: none; } /* one file: select it and use the bar below */
+  .row-preview { min-height: 44px; padding: 0 10px; border: 0; text-decoration: underline;
+                 text-decoration-color: var(--line); text-underline-offset: 3px; font-size: 12px; }
+  .row-drop { width: 44px; height: 44px; }
+
+  .empty { padding: 8px 0; }
+
+  /* Licence and the gateway's pill end the page instead of floating over it. */
+  .colophon { padding-right: 0; line-height: 1.5; }
+  /* `body #` outranks the gateway's own `#auth-bar` rule, which is injected
+     after this sheet and would otherwise win the tie. */
+  body #auth-bar { position: static; padding: 0 16px 16px; }
+
+  #notices:popover-open { inset: auto 16px calc(84px + env(safe-area-inset-bottom, 0px)) 16px;
+             width: auto; max-width: none; align-items: stretch; }
+  .notice .nx { width: 44px; height: 44px; }
+
+  /* Preview: one document at a time, switched by Original | Compressed. */
+  .viewer-bar { padding: 8px 6px 8px 16px; gap: 8px; }
+  .viewer-name { flex: 1; }
+  .viewer-bar .ghost { min-height: 44px; border: 0; }
+  .viewer-zoom { order: 3; flex-basis: 100%; margin: 0 10px 0 0;
+                 display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .viewer-zoom button { min-height: 44px; padding: 0; }
+  .viewer-which { display: grid; grid-template-columns: 1fr 1fr; margin: 12px 16px 0;
+                  padding: 3px; border: 1px solid var(--line); border-radius: 12px;
+                  background: var(--panel); }
+  .viewer-which button { min-height: 48px; border: 0; border-radius: 9px; background: none;
+                  color: var(--muted); font: 600 13px var(--display); cursor: pointer;
+                  display: flex; flex-direction: column; align-items: center;
+                  justify-content: center; gap: 2px; }
+  .viewer-which small { font: 400 10.5px var(--mono); }
+  .viewer-which button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+  .viewer-panes { display: block; background: none; }
+  .viewer-pane { height: 100%; }
+  .viewer-pane h3 { display: none; }
+  .viewer[data-show="a"] .viewer-pane:nth-child(2),
+  .viewer[data-show="b"] .viewer-pane:nth-child(1) { display: none; }
 }

@@ -13,42 +13,45 @@ import { renderDocument, rescale, destroy } from "./preview.js";
 const form = document.getElementById("shrink");
 const input = document.getElementById("file");
 const drop = document.getElementById("drop");
-const dropText = document.getElementById("dropText");
-const picks = document.getElementById("picks");
-const queue = document.getElementById("queue");
-const picksEmpty = document.getElementById("picksEmpty");
+const dropIdle = document.getElementById("dropIdle");
+const dropMore = document.getElementById("dropMore");
+const qualityNote = document.getElementById("qualityNote");
+const list = document.getElementById("fileList");
+const filesMeta = document.getElementById("filesMeta");
+const filesEmpty = document.getElementById("filesEmpty");
+const clearPicks = document.getElementById("clearPicks");
+const rowTemplate = document.getElementById("rowTemplate");
 const resultsBar = document.getElementById("resultsBar");
-const resultsEmpty = document.getElementById("resultsEmpty");
+const total = document.getElementById("resultsTotal");
+const selectAll = document.getElementById("selectAll");
+const resultsCount = document.getElementById("resultsCount");
+const downloadSelected = document.getElementById("downloadSelected");
+const shareSelected = document.getElementById("shareSelected");
 const viewer = document.getElementById("viewer");
 const viewerName = document.getElementById("viewerName");
 const viewerBefore = document.getElementById("viewerBefore");
 const viewerAfter = document.getElementById("viewerAfter");
 const viewerQuality = document.getElementById("viewerQuality");
+const whichBefore = document.getElementById("whichBefore");
+const whichAfter = document.getElementById("whichAfter");
 const viewerA = document.getElementById("viewerA");
 const viewerB = document.getElementById("viewerB");
 const scrollA = document.getElementById("scrollA");
 const scrollB = document.getElementById("scrollB");
-const clearPicks = document.getElementById("clearPicks");
-const pickTemplate = document.getElementById("pickTemplate");
 const go = document.getElementById("go");
-const results = document.getElementById("results");
-const list = document.getElementById("resultList");
-const total = document.getElementById("resultsTotal");
-const rowTemplate = document.getElementById("rowTemplate");
-const selectAll = document.getElementById("selectAll");
-const resultsCount = document.getElementById("resultsCount");
-const downloadSelected = document.getElementById("downloadSelected");
-const shareSelected = document.getElementById("shareSelected");
 const choices = document.getElementById("choices");
 const maxBytes = Number(form.dataset.maxBytes);
 const maxFiles = Number(form.dataset.maxFiles);
 
-let objectUrls = [];
-// Every finished file, in row order: { name, bytes, row }. The row keeps the
-// checkbox, so this is the only place that has to know what "selected" means.
-let finished = [];
+/* `picked` is the source of truth, not input.files: a FileList is read-only, so
+   removing one file means rebuilding the list and assigning it back. Each file
+   keeps one row for as long as it is picked, and at most one result. */
+let picked = [];
+const rows = new Map();     // File -> <li>
+const fileOf = new WeakMap(); // <li> -> File, for the list's one click handler
+const results = new Map();  // File -> { name, bytes, file, preset, url, row, saved }
 // Declared here, with the rest of the state, rather than beside the code that
-// uses it: renderPicks() runs while this module is still evaluating, and a `let`
+// uses it: renderFiles() runs while this module is still evaluating, and a `let`
 // read before its declaration throws rather than reading undefined.
 let compressing = false;
 
@@ -226,7 +229,17 @@ function drawChoices() {
   }
 }
 drawChoices();
-choices.addEventListener("change", syncCompressButton);
+choices.addEventListener("change", () => {
+  syncQualityNote();
+  syncCompressButton();
+});
+
+/** The phone's one-line description of the chosen preset: its blurb and dpi. */
+function syncQualityNote() {
+  const preset = chosenPreset();
+  qualityNote.textContent = `${preset.blurb} ${preset.detail.split(" · ")[0]}`;
+}
+syncQualityNote();
 
 function chosenPreset() {
   const picked = choices.querySelector("input[name=quality]:checked");
@@ -267,18 +280,7 @@ async function hashOf(bytes) {
   return `${a.toString(16)}${b.toString(16)}-${bytes.length.toString(16)}`;
 }
 
-/** Files still needing work for the preset currently chosen. */
-function workLeft() {
-  const preset = chosenPreset();
-  return picked.filter((file) => !done.has(resultKey(file, preset)));
-}
-
-/* ---- The picked files -----------------------------------------------------
-   `picked` is the source of truth, not input.files: a FileList is read-only, so
-   removing one file means rebuilding the list and assigning it back. Keeping our
-   own array is what makes each chip's × possible at all. */
-let picked = [];
-
+/* ---- The file list ------------------------------------------------------- */
 function syncInput() {
   // A DataTransfer is the only way to construct a FileList.
   const data = new DataTransfer();
@@ -286,34 +288,80 @@ function syncInput() {
   input.files = data.files;
 }
 
-function renderPicks() {
-  drop.classList.toggle("has-file", picked.length > 0);
-  // The panel stays on screen empty: the shape of the job — pick, process,
-  // collect — should be visible before anything has been picked, rather than
-  // columns appearing from nowhere as the user goes.
-  picksEmpty.hidden = picked.length > 0;
-  clearPicks.hidden = picked.length === 0;
-  dropText.textContent = picked.length
-    ? `${picked.length} file${picked.length > 1 ? "s" : ""} — ${humanBytes(
-        picked.reduce((sum, f) => sum + f.size, 0))} in total`
-    : "Choose files, or drop them here";
+const ROW_STATES = ["pending", "queued", "working", "done", "failed"];
 
-  picks.replaceChildren();
-  for (const [i, file] of picked.entries()) {
-    const chip = pickTemplate.content.firstElementChild.cloneNode(true);
-    const name = chip.querySelector(".pick-name");
-    name.textContent = file.name;
-    name.title = file.name; // the full name when it is ellipsised
-    chip.querySelector(".pick-size").textContent = humanBytes(file.size);
-    if (file.size > maxBytes) chip.classList.add("too-big");
-    chip.querySelector(".pick-drop").addEventListener("click", () => {
-      picked.splice(i, 1);
-      syncInput();
-      renderPicks();
-    });
-    picks.append(chip);
-  }
+function setRowState(row, state, status = "") {
+  for (const name of ROW_STATES) row.classList.toggle(name, name === state);
+  row.querySelector(".row-status").textContent = status;
+}
+
+/** Put a row back to "picked, nothing done yet": its size and its remove button. */
+function showPending(file) {
+  const row = rows.get(file);
+  const tooBig = file.size > maxBytes;
+  row.classList.toggle("too-big", tooBig);
+  row.classList.remove("selected"); // nothing to select until it has a result
+  row.querySelector(".row-size").textContent = humanBytes(file.size);
+  row.querySelector(".row-sel").hidden = true;
+  row.querySelector(".row-preview").hidden = true;
+  row.querySelector(".row-get").hidden = true;
+  row.querySelector(".row-drop").hidden = false;
+  // Said on the row, beside the file, rather than only in a toast at submit:
+  // the row is where the fix (remove it) is.
+  setRowState(row, "pending",
+    tooBig ? `Over the ${humanBytes(maxBytes)} limit. Remove it to continue.` : "");
+}
+
+function newRow(file) {
+  const row = rowTemplate.content.firstElementChild.cloneNode(true);
+  const name = row.querySelector(".row-name");
+  name.textContent = file.name;
+  name.title = file.name; // the full name when it is ellipsised
+  row.querySelector(".row-drop").setAttribute("aria-label", `Remove ${file.name}`);
+  fileOf.set(row, file);
+  rows.set(file, row);
+  showPending(file);
+}
+
+/** Forget a file's result and free its download URL. */
+function dropResult(file) {
+  const item = results.get(file);
+  if (!item) return;
+  URL.revokeObjectURL(item.url);
+  results.delete(file);
+}
+
+function renderFiles() {
+  for (const file of picked) if (!rows.has(file)) newRow(file);
+  list.replaceChildren(...picked.map((file) => rows.get(file)));
+
+  const count = picked.length;
+  const size = picked.reduce((sum, f) => sum + f.size, 0);
+  filesEmpty.hidden = count > 0;
+  clearPicks.hidden = count === 0;
+  filesMeta.textContent = count
+    ? `${count} file${count > 1 ? "s" : ""} · ${humanBytes(size)}` : "";
+  drop.classList.toggle("has-file", count > 0);
+  dropIdle.hidden = count > 0;
+  dropMore.hidden = count === 0;
+  syncBar();
   syncCompressButton();
+}
+
+function removeFiles(gone) {
+  for (const file of gone) {
+    dropResult(file);
+    rows.delete(file);
+  }
+  picked = picked.filter((file) => !gone.includes(file));
+  syncInput();
+  renderFiles();
+}
+
+/** Files still needing work for the preset currently chosen. */
+function workLeft() {
+  const preset = chosenPreset();
+  return picked.filter((file) => !done.has(resultKey(file, preset)));
 }
 
 /**
@@ -342,7 +390,7 @@ async function noteHashes(files) {
     if (hashes.has(file)) return;
     hashes.set(file, await hashOf(new Uint8Array(await file.arrayBuffer())));
   }));
-  renderPicks();
+  syncCompressButton();
 }
 
 function addFiles(files) {
@@ -356,27 +404,31 @@ function addFiles(files) {
     if (!already) picked.push(file);
   }
   syncInput();
-  renderPicks();
+  renderFiles();
   // Hashing reads the whole file, so the list is drawn first and the button
   // settles a moment later rather than the page waiting on disk.
   noteHashes(picked);
 }
 
-// The picker replaces the selection and a drop adds to it — which is how both
-// already behave everywhere else, so neither needs explaining.
-input.addEventListener("change", () => {
-  picked = [...input.files];
-  if (picked.length) prefetchEngine();
-  renderPicks();
-  noteHashes(picked);
-});
-picked = [...input.files]; // a back/forward navigation can restore a selection
-renderPicks();
+// The picker adds, like a drop does: once files are listed the box says "Add
+// more files", and a picker that silently replaced them would contradict it.
+input.addEventListener("change", () => addFiles([...input.files]));
+addFiles([...input.files]); // a back/forward navigation can restore a selection
 
-clearPicks.addEventListener("click", () => {
-  picked = [];
-  syncInput();
-  renderPicks();
+clearPicks.addEventListener("click", () => removeFiles([...picked]));
+
+// One handler for every row's controls: rows outlive a batch, so a listener
+// added per result would stack up on each re-run.
+list.addEventListener("click", (e) => {
+  const row = e.target.closest(".row");
+  const file = row && fileOf.get(row);
+  if (!file) return;
+  if (e.target.closest(".row-drop")) removeFiles([file]);
+  else if (e.target.closest(".row-preview")) openPreview(results.get(file));
+  else if (e.target.closest(".row-get")) markSaved([results.get(file)]);
+});
+list.addEventListener("change", (e) => {
+  if (e.target.matches(".row-sel")) syncBar();
 });
 
 /* Dropping is handled on the window, not only on the dashed box.
@@ -420,7 +472,7 @@ window.addEventListener("drop", (e) => {
   }
   const dropped = [...(e.dataTransfer?.files || [])];
   // A dropped folder arrives with no type and no extension; taking it would add
-  // a chip that can never compress.
+  // a row that can never compress.
   const pdfs = dropped.filter((f) => f.type === "application/pdf" || /\.pdf$/i.test(f.name));
   if (pdfs.length) addFiles(pdfs);
   else if (dropped.length) notice("Only PDFs can be compressed.", "error");
@@ -429,22 +481,21 @@ window.addEventListener("drop", (e) => {
 /**
  * Freeze the inputs while a batch runs.
  *
- * Not cosmetic. Removing a chip or adding a file mid-run would edit the list the
- * running batch was started from, and the rows are addressed by index — the
- * results would land on the wrong lines. Changing the quality would be worse:
- * the preset is read once at the start, so the picker would say Print while
- * Email was still being produced.
+ * Not cosmetic. Removing a file mid-run would pull a row out from under the
+ * worker filling it in, and changing the quality would be worse: the preset is
+ * read once at the start, so the picker would say Print while Email was still
+ * being produced.
  *
- * `inert` rather than `disabled` on each control: it takes the whole subtree out
+ * `inert` rather than `disabled` on the settings: it takes the whole subtree out
  * of pointer events, tab order and the accessibility tree in one attribute, and
  * it leaves the Compress button — which is outside these — free to keep
- * announcing progress.
+ * announcing progress. The list itself stays live so finished rows can be
+ * previewed mid-run; only its remove buttons are switched off.
  */
 function lockForm(locked) {
   for (const part of form.querySelectorAll(".field")) part.inert = locked;
-  // The queue is its own panel now, a sibling of the form rather than a column
-  // inside it, so it has to be reached on its own.
-  queue.inert = locked;
+  clearPicks.disabled = locked;
+  for (const button of list.querySelectorAll(".row-drop")) button.disabled = locked;
   form.classList.toggle("busy", locked);
 }
 
@@ -472,56 +523,52 @@ form.addEventListener("submit", async (e) => {
   // give half the files one quality and half another.
   const preset = chosenPreset();
   const files = [...picked];
-  reset(files);
 
-  let before = 0, after = 0, failed = 0, finished = 0;
+  let failed = 0, finishedCount = 0;
   const progress = () => {
     go.textContent = files.length > 1
-      ? `Compressing… ${finished}/${files.length}` : "Compressing…";
+      ? `Compressing… ${finishedCount}/${files.length}` : "Compressing…";
   };
-  progress();
 
   // Anything already compressed at this quality is placed straight away. The
   // work was done once; doing it again would produce the same bytes and cost the
   // same minute.
   const todo = [];
-  for (const [index, file] of files.entries()) {
+  for (const file of files) {
     const cached = done.get(resultKey(file, preset));
     if (cached) {
-      before += file.size;
-      after += cached.bytes.length;
-      placeRow(list.children[index], file, cached.bytes, cached.images, preset, true);
-      finished++;
+      placeResult(file, cached, preset, true);
+      finishedCount++;
     } else {
-      todo.push({ file, index });
+      dropResult(file);
+      showPending(file);
+      setRowState(rows.get(file), "queued", "Queued…");
+      todo.push(file);
     }
   }
+  syncBar();
   progress();
 
-  await runPool(todo.map((t) => t.file), preset, (i) => {
-    const row = list.children[todo[i].index];
-    row.classList.add("working");
-    row.querySelector(".row-status").textContent = "Compressing…";
+  await runPool(todo, preset, (i) => {
+    setRowState(rows.get(todo[i]), "working", "Compressing…");
   }, (i, result, err) => {
-    finished++;
-    const { file, index } = todo[i];
-    const row = list.children[index];
-    row.classList.remove("working");
+    finishedCount++;
+    const file = todo[i];
     if (err) {
       failed++;
-      failRow(row, err.message);
+      setRowState(rows.get(file), "failed", err.message);
     } else {
-      before += file.size;
-      after += result.out.length;
-      const item = placeRow(row, file, result.out, result.images, preset, false);
-      done.set(resultKey(file, preset), item);
+      const output = { bytes: result.out, images: result.images };
+      done.set(resultKey(file, preset), output);
+      placeResult(file, output, preset, false);
     }
+    syncBar();
     progress();
   });
 
   compressing = false;
   lockForm(false);
-  summarise(files.length - failed, failed, before, after);
+  reportFailures(files.length - failed, failed);
   // Last, so it reads the results this run just added: with nothing left to do
   // it settles on "Compressed" and goes flat.
   syncCompressButton();
@@ -535,7 +582,17 @@ form.addEventListener("submit", async (e) => {
    The listener is added and removed rather than left in place: a page that
    always asks is a page people learn to click through, and browsers ignore the
    prompt anyway unless the user has interacted with the page. */
-const unsaved = () => finished.filter((item) => !item.saved).length;
+// Function declarations, not arrow consts: the list is first drawn while this
+// module is still evaluating, before a const further down would exist.
+
+/** Every result, in the order the rows are listed. */
+function finished() {
+  return picked.map((file) => results.get(file)).filter(Boolean);
+}
+
+function unsaved() {
+  return finished().filter((item) => !item.saved).length;
+}
 
 function warnBeforeUnload(event) {
   // preventDefault is the modern spelling; returnValue is what older browsers
@@ -553,60 +610,77 @@ function syncUnloadWarning() {
 /** Marks results the user has actually taken a copy of. */
 function markSaved(items) {
   for (const item of items) item.saved = true;
-  syncSelection();
+  syncBar();
 }
 
 /* ---- Selection ------------------------------------------------------------
    Everything that finishes starts ticked: the common case is "all of them", and
    unticking two is less work than ticking eighteen. */
-const selected = () => finished.filter((item) => item.row.querySelector(".row-sel").checked);
+function selected() {
+  return finished().filter((item) => item.row.querySelector(".row-sel").checked);
+}
 
 // Sharing a file needs a File, not a Blob — the name is what the mail client
 // attaches it as.
 const asFile = (item) =>
   new File([item.bytes], item.name, { type: "application/pdf" });
 
-function syncSelection() {
-  const picked = selected();
+/** "−77%", or "no smaller" — Ghostscript can make a file bigger, and a
+    negative saving would read as a typo. */
+function savingText(before, after) {
+  const saved = before ? Math.round((1 - after / before) * 100) : 0;
+  return saved > 0 ? `\u2212${saved}%` : "no smaller";
+}
 
-  for (const item of finished) {
+/** The bar above the list: what is selected, and what the job saved overall. */
+function syncBar() {
+  const items = finished();
+  const chosen = selected();
+
+  for (const item of items) {
     item.row.classList.toggle("selected", item.row.querySelector(".row-sel").checked);
   }
 
   // Indeterminate at "some", so the header never claims more than is true.
-  selectAll.checked = picked.length > 0 && picked.length === finished.length;
-  selectAll.indeterminate = picked.length > 0 && picked.length < finished.length;
-  selectAll.disabled = finished.length === 0;
+  selectAll.checked = chosen.length > 0 && chosen.length === items.length;
+  selectAll.indeterminate = chosen.length > 0 && chosen.length < items.length;
+  selectAll.disabled = items.length === 0;
 
-  resultsBar.hidden = finished.length === 0;
-  resultsEmpty.hidden = finished.length > 0 || list.children.length > 0;
-  // Just the count. The selected size was a third number on a line that already
-  // carried two, and every row states its own size a few pixels below.
-  resultsCount.textContent = finished.length
-    ? `${picked.length} of ${finished.length} selected`
-    : "";
+  resultsBar.hidden = items.length === 0;
+  resultsCount.textContent = items.length
+    ? `${chosen.length} of ${items.length} selected` : "";
+
+  // Worked out from the rows on screen rather than kept as a batch total, so it
+  // stays true when a file is removed or re-run. A fact about the results, not
+  // an event, so it is written here and not raised as a toast.
+  const before = items.reduce((sum, item) => sum + item.file.size, 0);
+  const after = items.reduce((sum, item) => sum + item.bytes.length, 0);
+  if (before && after < before) {
+    const saving = document.createElement("b");
+    saving.textContent = `${Math.round((1 - after / before) * 100)}% smaller`;
+    total.replaceChildren(saving,
+      ` overall · ${humanBytes(before)} \u2192 ${humanBytes(after)}`);
+  } else {
+    total.replaceChildren();
+  }
 
   // No visible counter: the browser's own confirmation on the way out is the
   // warning, and a running tally beside it was saying the same thing twice.
   syncUnloadWarning();
 
-  // No counts here: the bar already says "3 of 4 selected" a few centimetres to
-  // the left, and repeating it in both buttons made three numbers on one line
-  // that all mean the same thing. "(zip)" stays — that is not a count, it is
-  // what will land in the downloads folder. "Share to…" keeps its ellipsis: it
-  // opens a chooser rather than doing the thing.
-  downloadSelected.disabled = picked.length === 0;
+  // No counts here: the bar already says "3 of 4 selected" beside them. "(zip)"
+  // stays — that is not a count, it is what will land in the downloads folder.
+  downloadSelected.disabled = chosen.length === 0;
   downloadSelected.querySelector("span").textContent =
-    picked.length > 1 ? "Download (zip)" : "Download";
-  shareSelected.disabled = picked.length === 0;
-  shareSelected.querySelector("span").textContent = "Share to…";
+    chosen.length > 1 ? "Download (zip)" : "Download";
+  shareSelected.disabled = chosen.length === 0;
 }
 
 selectAll.addEventListener("change", () => {
-  for (const item of finished) {
+  for (const item of finished()) {
     item.row.querySelector(".row-sel").checked = selectAll.checked;
   }
-  syncSelection();
+  syncBar();
 });
 
 downloadSelected.addEventListener("click", () => {
@@ -698,12 +772,11 @@ async function openPreview(item) {
   // so the number that says how much came off belongs beside the one it came
   // off. Italic rather than brackets for the recipe — a preset can carry its own
   // brackets ("Print (Brochure)") and nesting them reads as a typo.
-  const saved = item.file.size
-    ? Math.round((1 - item.bytes.length / item.file.size) * 100) : 0;
-  viewerAfter.textContent = saved > 0
-    ? `${humanBytes(item.bytes.length)} (~${saved}%)`
-    : `${humanBytes(item.bytes.length)} (no smaller)`;
+  viewerAfter.textContent =
+    `${humanBytes(item.bytes.length)} ${savingText(item.file.size, item.bytes.length)}`;
   viewerQuality.textContent = item.preset ? `${item.preset} quality` : "";
+  whichBefore.textContent = viewerBefore.textContent;
+  whichAfter.textContent = viewerAfter.textContent;
   viewer.hidden = false;
   document.body.classList.add("viewing");
   document.getElementById("viewerClose").focus();
@@ -756,6 +829,18 @@ function setZoom(zoom) {
 for (const button of viewer.querySelectorAll(".viewer-zoom button")) {
   button.addEventListener("click", () => setZoom(button.dataset.zoom));
 }
+
+// Phone: which document is on screen. Zoom is re-applied after the switch
+// because "Fit" measures the pane, and a hidden pane measures zero wide.
+for (const button of viewer.querySelectorAll(".viewer-which button")) {
+  button.addEventListener("click", () => {
+    viewer.dataset.show = button.dataset.show;
+    for (const other of viewer.querySelectorAll(".viewer-which button")) {
+      other.setAttribute("aria-pressed", String(other === button));
+    }
+    setZoom(currentZoom);
+  });
+}
 document.getElementById("viewerClose").addEventListener("click", closePreview);
 // Escape closes it, as it closes everything else that covers the page.
 document.addEventListener("keydown", (e) => {
@@ -786,119 +871,69 @@ for (const [from, to] of [[scrollA, scrollB], [scrollB, scrollA]]) {
   });
 }
 
-/* ---- The rows ------------------------------------------------------------- */
-function reset(files) {
-  for (const url of objectUrls) URL.revokeObjectURL(url);
-  objectUrls = [];
-  list.replaceChildren();
-  total.textContent = "";
-  finished = [];
-  for (const file of files) {
-    const row = rowTemplate.content.firstElementChild.cloneNode(true);
-    row.querySelector(".row-name").textContent = file.name;
-    row.querySelector(".row-status").textContent = "Queued…";
-    list.append(row);
-  }
-  resultsEmpty.hidden = files.length > 0;
-  syncSelection();
-}
-
+/* ---- Results ------------------------------------------------------------- */
 /**
- * Fill in a finished row, whether the bytes were just produced or came from a
- * previous run at the same quality.
- *
- * Returns what the cache stores, so a reused result and a fresh one are the same
- * shape and the row cannot tell them apart except where it says so.
+ * Fill in a file's row with its result, whether the bytes were just produced or
+ * came from a previous run at the same quality.
  */
-function placeRow(row, file, out, images, preset, reused) {
-  const url = URL.createObjectURL(new Blob([out], { type: "application/pdf" }));
-  objectUrls.push(url);
-
+function placeResult(file, { bytes, images }, preset, reused) {
+  dropResult(file);
+  const row = rows.get(file);
+  const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+  // The name says which recipe produced it, so two runs of the same source do
+  // not land in the downloads folder as "file (1).pdf".
   const name = file.name.replace(/\.pdf$/i, "") + preset.suffix + ".pdf";
+  results.set(file, { name, bytes, file, preset: preset.name, url, row, saved: false });
+
+  // Everything that finishes starts ticked: the common case is "all of them",
+  // and unticking two is less work than ticking eighteen.
   const checkbox = row.querySelector(".row-sel");
-  checkbox.disabled = false;
+  checkbox.hidden = false;
   checkbox.checked = true;
-  checkbox.addEventListener("change", syncSelection);
-  row.classList.remove("pending");
-  finished.push({ name, bytes: out, row, file, preset: preset.name, saved: false });
 
   const link = row.querySelector(".row-get");
   link.href = url;
-  // The name says which recipe produced it, so two runs of the same source do
-  // not land in the downloads folder as "file (1).pdf".
   link.download = name;
   link.hidden = false;
-  link.addEventListener("click", () => {
-    const item = finished.find((f) => f.row === row);
-    if (item) markSaved([item]);
-  });
+  row.querySelector(".row-preview").hidden = false;
+  // Done rows leave through Clear all; a lone × beside Download is a misclick.
+  row.querySelector(".row-drop").hidden = true;
 
-  const preview = row.querySelector(".row-preview");
-  preview.hidden = false;
-  preview.addEventListener("click", () => {
-    const item = finished.find((f) => f.row === row);
-    if (item) openPreview(item);
-  });
-
-  row.classList.add("done");
-
-  // Ghostscript can make a file bigger — a PDF that is already one big JPEG
-  // gets re-encoded for nothing. Say so instead of showing a negative saving.
-  row.querySelector(".row-status").textContent =
-    out.length < file.size
-      ? `${humanBytes(file.size)} → ${humanBytes(out.length)} (~${Math.round((1 - out.length / file.size) * 100)}%)`
-      : `${humanBytes(file.size)} → ${humanBytes(out.length)} (no smaller)`;
-
+  const saving = document.createElement("b");
+  saving.textContent = savingText(file.size, bytes.length);
+  row.querySelector(".row-size").replaceChildren(
+    `${humanBytes(file.size)} \u2192 ${humanBytes(bytes.length)} `, saving);
 
   // What was actually done to the file. The image count is real — it comes from
-  // Ghostscript's own object dump. How many of those were *downsampled* is not
-  // reported by Ghostscript and is not claimed here.
-  const detail = row.querySelector(".row-detail");
-  detail.textContent =
-    `${describeImages(images)} · ${preset.name} quality` +
+  // Ghostscript's own object dump. Italic rather than brackets for the recipe: a
+  // preset can carry its own brackets ("Print (Brochure)").
+  const quality = document.createElement("i");
+  quality.textContent = `${preset.name} quality`;
+  setRowState(row, "done");
+  row.querySelector(".row-status").replaceChildren(
+    `${describeImages(images)} · `, quality,
     // Said plainly rather than hidden: a row that appears instantly while its
     // neighbours grind looks like a bug unless it explains itself.
-    (reused ? " · already compressed" : "");
-  return { name, bytes: out, images };
+    reused ? " · already compressed" : "");
 }
 
 /** "400/417 images resized". Both numbers in one phrase rather than a count and
-    a breakdown: the interesting quantity is the ratio, and spelling out what
-    happened to the remainder took a line to say nothing.
+    a breakdown: the interesting quantity is the ratio.
 
-    "text and vectors intact" used to follow this and has gone: it was true of
-    every file at every quality, so it distinguished nothing.
-
-    The *reason* an image was left alone is still deliberately not claimed — it
+    The *reason* an image was left alone is deliberately not claimed — it
     depends on the image's placement on the page, which is not read here. */
 function describeImages({ total, resized }) {
   if (!total) return "No images";
   return `${resized}/${total} image${total > 1 ? "s" : ""} resized`;
 }
 
-function failRow(row, message) {
-  row.classList.add("failed");
-  row.classList.remove("pending");
-  row.querySelector(".row-status").textContent = message;
-}
-
-function summarise(ok, failed, before, after) {
-  syncSelection();
+/** Failures are events, so they are the one thing still raised as a toast. */
+function reportFailures(ok, failed) {
+  if (!failed) return;
   if (!ok) {
-    total.textContent = "";
     notice(failed === 1 ? "That file could not be compressed."
                         : `All ${failed} files failed.`, "error");
     return;
   }
-  // Written into the bar, not raised as a toast. Two reasons, and the first one
-  // is a bug this replaced: the toast is fixed to the bottom centre, which is
-  // where the Compress button sits on a normal window, so for its whole life it
-  // swallowed clicks meant for the button underneath it. The second is that a
-  // batch's saving is a fact about the results, not an event — it should still
-  // be readable a minute later. Toasts are kept for failures.
-  const saved = before ? Math.round((1 - after / before) * 100) : 0;
-  total.textContent = saved > 0
-    ? `${saved}% smaller overall · ${humanBytes(before)} → ${humanBytes(after)}`
-    : "";
-  if (failed) notice(`${failed} of ${failed + ok} files failed.`, "error");
+  notice(`${failed} of ${failed + ok} files failed.`, "error");
 }

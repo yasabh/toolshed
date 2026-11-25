@@ -135,10 +135,14 @@ the way: [L-003](lessons.md#l-003--2026-08-13--bug--side-by-side-preview-drifted
 
 ## The visual language is shared, not owned
 
-The `:root` token block at the top of `public/style.css`, the `theme`
-localStorage key and the `.theme-toggle` markup are **tv-webui's, verbatim**.
-`/tvs`, `/login` and this app share them, so a theme picked in one shows
-everywhere. Do not tidy them.
+The `:root` token block and `@font-face` at the top of `public/style.css` are
+**gatekeeper's** (`auth/static/login.css`, `gateway/assets/index.css`): keep
+them in step. The `theme` localStorage key is shared with `/tvs` and `/login`,
+so a theme picked in one shows everywhere. Like `/tvs`, the page shows no
+"signed in as" row.
+
+ShrinkPDF is **one list**: each file keeps one row from picked to done, so a
+name is never shown twice.
 
 From the login page: **labels above fields**, not placeholders; a **3px focus
 ring** rather than a border-colour shift; **no entry animation** on anything

@@ -50,22 +50,51 @@ const root = document.documentElement;
   });
 })();
 
-/* ---- Toast notices — tv-webui's js/notice.js, verbatim ------------------- */
+/* ---- Toast notices ------------------------------------------------------- */
 //   notice("Saved", "success");  notice("Failed", "error");  notice("…")
+// The stack is a popover="manual", so it sits in the top layer above any
+// overlay (the preview included) without a z-index race. Screen readers hear the
+// text through one live region that exists from page load: a region created
+// together with its message is often not read at all.
 const host = document.getElementById("notices");
-const ICON = { success: "✓", error: "!", info: "i" };
+const announce = document.getElementById("announce");
+const ICON = { success: "\u2713", error: "!", info: "i" };
+const SHOW_MS = 3500;
+const X_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+  'stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 
 export function notice(message, type = "info") {
-  const el = document.createElement("div");
-  el.className = `notice ${type}`;
-  el.innerHTML = `<span class="ni">${ICON[type] || ICON.info}</span><span></span>`;
-  el.lastChild.textContent = message; // textContent avoids HTML injection
-  host.appendChild(el);
-  requestAnimationFrame(() => el.classList.add("in"));
+  const card = document.createElement("div");
+  card.className = `notice ${type}`;
+  const icon = document.createElement("span");
+  icon.className = "ni";
+  icon.setAttribute("aria-hidden", "true");
+  icon.textContent = ICON[type] || ICON.info;
+  const text = document.createElement("span");
+  text.className = "nt";
+  text.textContent = message; // textContent: a file name is not markup
+  const dismiss = document.createElement("button");
+  dismiss.type = "button";
+  dismiss.className = "nx";
+  dismiss.setAttribute("aria-label", "Dismiss");
+  dismiss.innerHTML = X_ICON; // a constant, never data
+  card.append(icon, text, dismiss);
 
-  const close = () => { el.classList.remove("in"); setTimeout(() => el.remove(), 220); };
-  const timer = setTimeout(close, 3500);
-  el.addEventListener("click", () => { clearTimeout(timer); close(); });
+  host.append(card);
+  if (!host.matches(":popover-open")) host.showPopover();
+  announce.textContent = message;
+  requestAnimationFrame(() => card.classList.add("in"));
+
+  const close = () => {
+    clearTimeout(timer);
+    card.classList.remove("in");
+    setTimeout(() => {
+      card.remove();
+      if (!host.children.length && host.matches(":popover-open")) host.hidePopover();
+    }, 220);
+  };
+  const timer = setTimeout(close, SHOW_MS);
+  dismiss.addEventListener("click", close);
 }
 
 /* ---- Sizes, in the units people quote them in ---------------------------- */

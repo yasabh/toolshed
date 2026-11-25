@@ -22,8 +22,8 @@ docker compose up -d --build           # deploy (ask first)
 - Tools are GET-only; nothing is uploaded. Don't add a server-side file path.
 - No npm dependencies, no build step (docs/adr/0001).
 - A new top-level folder needs its own `COPY` line in `Dockerfile`; never `COPY . .`.
-- Keep the `:root` tokens, `theme` key and `.theme-toggle` in `public/style.css`
-  verbatim: shared with tv-webui and login.
+- The `:root` tokens and `@font-face` in `public/style.css` are gatekeeper's
+  (`auth/static/login.css`): keep them in step. The `theme` key is shared with /tvs.
 - New tool: `lib/tools/<id>.js` + template fragment + entry in `lib/registry.js`.
 - Comments explain why, not what. Commit messages short, no `Co-Authored-By`.
 

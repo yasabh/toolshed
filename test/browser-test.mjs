@@ -105,11 +105,11 @@ try {
   for (let i = 0; i < 4; i++) writeFileSync(`/tmp/sample${i}.pdf`, pdf);
   await input.uploadFile("/tmp/sample.pdf", "/tmp/sample1.pdf",
                          "/tmp/sample2.pdf", "/tmp/sample3.pdf");
-  await page.waitForSelector(".pick", { timeout: 10000 });
-  const chips = await page.$$eval(".pick .pick-name", (els) => els.map((e) => e.textContent));
-  chips.length === 4 && chips[0] === "sample.pdf"
-    ? ok(`${chips.length} chips, first is ${chips[0]}`)
-    : bad(`chips: ${JSON.stringify(chips)}`);
+  await page.waitForSelector(".row", { timeout: 10000 });
+  const names = await page.$$eval(".row .row-name", (els) => els.map((e) => e.textContent));
+  names.length === 4 && names[0] === "sample.pdf"
+    ? ok(`${names.length} rows, first is ${names[0]}`)
+    : bad(`rows: ${JSON.stringify(names)}`);
 
   // Scrollbars are made as narrow as each engine allows. Headless Chromium uses
   // overlay scrollbars, so the *width* cannot be measured here — what is checked
@@ -130,11 +130,11 @@ try {
     ? ok(`scrollbars use the narrower path for this engine (webkit=${bars.webkit}, scrollbar-width=${bars.width})`)
     : bad(`scrollbar rules: ${JSON.stringify(bars)}`);
 
-  // The empty states sit in the middle of their panels. Tucked under the heading
-  // they read as a caption for a list that is not there.
+  // The empty state sits in the middle of its panel. Tucked under the heading
+  // it reads as a caption for a list that is not there.
   const centred = await page.evaluate(() => {
-    const empty = document.getElementById("resultsEmpty");
-    const panel = document.getElementById("results");
+    const empty = document.getElementById("filesEmpty");
+    const panel = document.getElementById("files");
     if (empty.hidden) return null;
     const e = empty.getBoundingClientRect();
     const p = panel.getBoundingClientRect();
@@ -142,7 +142,7 @@ try {
   });
   centred === null || centred.off < 40
     ? ok(centred ? `the empty state is centred (${Math.round(centred.off)}px off)` 
-                 : "results already populated, centring not applicable")
+                 : "files already listed, centring not applicable")
     : bad(`empty state is ${Math.round(centred.off)}px off centre`);
 
   // ---- The sidebar --------------------------------------------------------
@@ -178,11 +178,10 @@ try {
     bar.expanded === "false"
     ? ok(`collapses to ${bar.width}px keeping the icons`)
     : bad(`sidebar collapsed: ${JSON.stringify(bar)}`);
-  // Ungated, the gateway sends an empty X-Auth-User — so there is no account
-  // row at all, rather than one permanently reading "Not signed in".
+  // No "signed in as" row, signed in or not: /tvs shows none either.
   !bar.account
-    ? ok("no account row while nobody is signed in")
-    : bad("an account row was rendered without a user");
+    ? ok("no account row, as in /tvs")
+    : bad("an account row was rendered");
 
   await page.reload({ waitUntil: "networkidle0" });
   bar = await sidebar();
@@ -197,11 +196,9 @@ try {
   // Re-pick the files the reload cleared, for everything that follows.
   await (await page.$("#file")).uploadFile("/tmp/sample.pdf", "/tmp/sample1.pdf",
                                            "/tmp/sample2.pdf", "/tmp/sample3.pdf");
-  await page.waitForSelector(".pick");
+  await page.waitForSelector(".row");
 
-  // The workbench is two columns only once there is something to put in the
-  // second one. Declared unconditionally it left an empty column on an untouched
-  // page, and a narrowed form beside dead space reads as a broken width.
+  // Settings and the one file list, side by side.
   const layout = await page.evaluate(() => {
     const bench = document.querySelector(".workbench");
     const panes = [...bench.children].filter((e) => getComputedStyle(e).display !== "none");
@@ -215,17 +212,16 @@ try {
       rules: panes.map((e) => getComputedStyle(e).borderLeftWidth),
     };
   });
-  layout.panes === 3 && layout.sameHeight &&
+  layout.panes === 2 && layout.sameHeight &&
     layout.rules[0] === "0px" && layout.rules.slice(1).every((r) => r === "1px")
     ? ok(`${layout.panes} panels of equal height, divided by full-height rules`)
     : bad(`workbench: ${JSON.stringify(layout)}`);
 
-  // The workbench grows with its content and stops at the bottom of the window.
-  // Filling the window unconditionally left empty panels under short lists;
-  // never capping pushed the page taller with every file added.
+  // The workbench stops at the bottom of the window; never capping pushed the
+  // page taller with every file added.
   const capped = await page.evaluate(() => {
     const bench = document.querySelector(".workbench");
-    const list = document.querySelector(".queue .picks");
+    const list = document.getElementById("fileList");
     return {
       bench: Math.round(bench.getBoundingClientRect().height),
       viewport: window.innerHeight,
@@ -237,9 +233,8 @@ try {
     ? ok(`the workbench stops at the window (${capped.bench}px of ${capped.viewport}px)`)
     : bad(`workbench height: ${JSON.stringify(capped)}`);
 
-  // Each list fills the panel it is in and scrolls inside it. Capped heights
-  // left a panel short of the two beside it with nothing in the gap; letting
-  // them grow instead would push the page taller with every file added.
+  // The list fills its panel and scrolls inside it; letting it grow instead
+  // would push the page taller with every file added.
   const filled = await page.evaluate(() => {
     const h = (el) => (el ? Math.round(el.getBoundingClientRect().height) : 0);
     // Whichever of the list or its empty state is on screen is the thing that
@@ -251,14 +246,13 @@ try {
       return h(document.querySelector(panel)) - h(shown);
     };
     return {
-      queueGap: body("#queue", ".queue .picks", "#picksEmpty"),
-      resultsGap: body("#results", ".result-list", "#resultsEmpty"),
+      gap: body("#files", "#fileList", "#filesEmpty"),
       pageScrolls: document.documentElement.scrollHeight > window.innerHeight,
     };
   });
   // The only slack should be the panel's own heading, not a dead band below.
-  filled.queueGap < 90 && filled.resultsGap < 90 && !filled.pageScrolls
-    ? ok(`lists fill their panels (${filled.queueGap}px / ${filled.resultsGap}px of heading)`)
+  filled.gap < 90 && !filled.pageScrolls
+    ? ok(`the list fills its panel (${filled.gap}px of heading)`)
     : bad(`panel fill: ${JSON.stringify(filled)}`);
 
   // Dropping outside the dashed box must still land. The browser's default for
@@ -275,17 +269,17 @@ try {
       target.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: data }));
     }
     await new Promise((r) => setTimeout(r, 50));
-    return { chips: document.querySelectorAll(".pick").length,
+    return { rows: document.querySelectorAll(".row").length,
              stillHere: !!document.getElementById("shrink") };
   });
-  dropped.stillHere && dropped.chips === 5
-    ? ok(`a drop outside the box is caught (${dropped.chips} chips)`)
+  dropped.stillHere && dropped.rows === 5
+    ? ok(`a drop outside the box is caught (${dropped.rows} rows)`)
     : bad(`drop outside the box: ${JSON.stringify(dropped)}`);
-  // Put the queue back to the four real files for everything below.
+  // Put the list back to the four real files for everything below.
   await page.evaluate(() => {
-    const chip = [...document.querySelectorAll(".pick")]
-      .find((c) => c.querySelector(".pick-name").textContent === "dropped-far-away.pdf");
-    chip.querySelector(".pick-drop").click();
+    const row = [...document.querySelectorAll(".row")]
+      .find((r) => r.querySelector(".row-name").textContent === "dropped-far-away.pdf");
+    row.querySelector(".row-drop").click();
   });
 
   // The engine is fetched when a file is picked, not when Compress is clicked —
@@ -325,8 +319,8 @@ try {
     ? ok(`${working.n} row(s) report Compressing while the rest queue`)
     : bad(`working row says "${working.status}"`);
 
-  // The inputs are frozen mid-run: editing the queue would move rows the batch
-  // addresses by index, and changing the quality would leave the picker saying
+  // The inputs are frozen mid-run: removing a file would pull a row out from
+  // under its worker, and changing the quality would leave the picker saying
   // one thing while another was being produced.
   const before = await page.evaluate(() =>
     document.querySelector('.choice input[value="print"]').checked);
@@ -337,12 +331,13 @@ try {
   await page.click('.choice input[value="print"]', { timeout: 2000 }).catch(() => {});
   const locked = await page.evaluate((was) => ({
     fields: [...document.querySelectorAll("#shrink .field")].every((f) => f.inert),
-    queue: document.getElementById("queue").inert,
+    removeOff: [...document.querySelectorAll(".row-drop")]
+      .every((b) => b.disabled || b.hidden) && document.getElementById("clearPicks").disabled,
     busy: document.getElementById("shrink").classList.contains("busy"),
     presetMoved: document.querySelector('.choice input[value="print"]').checked !== was,
     focusable: document.querySelector("#file").matches(":disabled, [inert] *, [inert]"),
   }), before);
-  locked.fields && locked.queue && locked.busy && !locked.presetMoved && locked.focusable
+  locked.fields && locked.removeOff && locked.busy && !locked.presetMoved && locked.focusable
     ? ok("the form is inert while compressing — a real click will not move the picker")
     : bad(`form during a run: ${JSON.stringify(locked)}`);
 
@@ -352,12 +347,12 @@ try {
     const data = new DataTransfer();
     data.items.add(new File([new Uint8Array([0x25, 0x50])], "mid-run.pdf",
                             { type: "application/pdf" }));
-    const before = document.querySelectorAll(".pick").length;
+    const before = document.querySelectorAll(".row").length;
     const event = new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: data });
     window.dispatchEvent(event);
     await new Promise((r) => setTimeout(r, 50));
     return { prevented: event.defaultPrevented,
-             added: document.querySelectorAll(".pick").length - before,
+             added: document.querySelectorAll(".row").length - before,
              stillHere: !!document.getElementById("shrink") };
   });
   survived.prevented && survived.added === 0 && survived.stillHere
@@ -395,8 +390,10 @@ try {
     bad(`the row failed: ${await page.$eval(".row.failed .row-status", (e) => e.textContent)}`);
   } else {
     ok("the row completed");
-    const status = await page.$eval(".row.done .row-status", (e) => e.textContent);
-    ok(`status: ${status}`);
+    const size = await page.$eval(".row.done .row-size", (e) => e.textContent);
+    /\u2192 .*(\u2212\d+%|no smaller)$/.test(size)
+      ? ok(`size: ${size}`)
+      : bad(`size column reads "${size}"`);
 
     // Pull the produced bytes back out of the blob: URL the download points at.
     const result = await page.evaluate(async () => {
@@ -418,7 +415,7 @@ try {
 
 
     // The mixed case: one image above the 200 dpi target, one below it.
-    const detail = await page.$eval(".row.done .row-detail", (e) => e.textContent);
+    const detail = await page.$eval(".row.done .row-status", (e) => e.textContent);
     detail.includes("1/2 images resized") && detail.includes("Email quality")
       ? ok(`image breakdown: ${detail}`)
       : bad(`unexpected breakdown: ${detail}`);
@@ -447,18 +444,15 @@ try {
     ? ok(`changing quality re-arms the button ("${afterSwitch.text}")`)
     : bad(`after switching quality: ${JSON.stringify(afterSwitch)}`);
 
-  // Mark the current rows first. Waiting on #go alone is not enough: it already
-  // reads "Compress" at the moment of clicking, so the wait returns instantly and
-  // the assertions below read the *previous* run's results. The marker only
-  // clears when reset() has replaced every row, which is the real start signal.
-  await page.evaluate(() =>
-    document.querySelectorAll(".row").forEach((r) => r.classList.add("stale")));
+  // Waiting on #go alone is not enough: it already reads "Compress" at the
+  // moment of clicking, so the wait would return instantly and read the
+  // *previous* run's results. Rows live on between runs, so what marks this
+  // run's end is every row naming the new preset (or failing).
   await page.click("#go");
   await page.waitForFunction(
-    () => document.querySelectorAll(".row.stale").length === 0, { timeout: 60000 });
-  await page.waitForFunction(
     () => !document.getElementById("go").textContent.startsWith("Compressing") &&
-          document.querySelectorAll(".row.done, .row.failed").length === 4,
+          [...document.querySelectorAll(".row")].every((r) => r.matches(".failed") ||
+            r.querySelector(".row-status").textContent.includes("Print (Brochure) quality")),
     { timeout: 180000 });
   const printFailed = await page.$(".row.failed");
   if (printFailed) {
@@ -470,7 +464,7 @@ try {
     printBytes > emailBytes
       ? ok(`Print keeps more than Email (${printBytes} > ${emailBytes})`)
       : bad(`Print (${printBytes}) is not larger than Email (${emailBytes})`);
-    const detail = await page.$eval(".row.done .row-detail", (e) => e.textContent);
+    const detail = await page.$eval(".row.done .row-status", (e) => e.textContent);
     detail.includes("Print (Brochure) quality")
       ? ok(`the row names the preset used`)
       : bad(`row detail does not name the preset: ${detail}`);
@@ -633,7 +627,7 @@ try {
   // the whole reason the label is set apart by italics instead.
   const wrapped = preview.quality.startsWith("(") && preview.quality.endsWith(")");
   /\bquality$/.test(preview.quality) && !wrapped &&
-    /\((~\d+%|no smaller)\)$/.test(preview.headings[1])
+    /(\u2212\d+%|no smaller)$/.test(preview.headings[1])
     ? ok(`the compressed pane reads "${preview.headings[1]}"`)
     : bad(`heading: ${JSON.stringify(preview.headings)}`);
 

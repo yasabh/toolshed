@@ -29,10 +29,12 @@
 <div class="shell">
   <aside class="sidebar">
     <div class="brand">
+      <!-- The wordmark is gatekeeper's (UCG/TVS, sign-in): mono, the second half in
+         the accent. Collapsed there is no room for a word, so the house stands in. -->
       <span class="brand-mark" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-6 9 6v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 21v-7h6v7"/></svg>
       </span>
-      <span class="brand-name">Toolshed</span>
+      <span class="brand-name">TOOL<b>SHED</b></span>
       <button id="sidebarToggle" class="collapse-btn" type="button"
               aria-label="Collapse sidebar" aria-expanded="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h10M3 12h10M3 18h10"/><path d="M21 12H15M17.5 8.5 14 12l3.5 3.5"/></svg>
@@ -42,8 +44,8 @@
     <nav aria-label="Tools">
       {{nav}}
     </nav>
-
-    {{account}}
+    <!-- No "signed in as" row: /tvs shows none either, and here everyone is
+       signed in, so it would be the same line for every visitor. -->
   </aside>
 
   <main class="pane">
@@ -66,6 +68,9 @@
   </main>
 </div>
 
-<div id="notices"></div>
+<!-- Toasts: a popover so they sit above the preview overlay; the live region
+     beside it is what screen readers hear (see notice() in app.js). -->
+<div id="notices" popover="manual"></div>
+<p id="announce" class="sr-only" role="status" aria-live="polite"></p>
 <script type="module" src="{{prefix}}/static/app.js"></script>
 </body></html>
