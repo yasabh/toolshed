@@ -15,6 +15,7 @@ docker compose up -d --build           # deploy (ask first)
 
 ## Rules
 
+- The repo is public: no internal hostnames, IPs or SSH users in committed files.
 - Never add `ports:` or bind mounts; the docker context is a remote Pi and
   `X-Auth-User` is only trustworthy with no published port.
 - Every URL the app emits goes through `url()` in `lib/prefix.js`; never

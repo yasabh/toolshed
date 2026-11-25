@@ -188,8 +188,8 @@ docker compose restart toolshed   # restart
 - Worker pool: `min(80% of cores, deviceMemory × 0.4 ÷ 512 MB, files)`. One
   file uses one core: `pdfwrite` is single-threaded. Detail in
   [docs/design.md](docs/design.md#worker-pool).
-- Image: ~270 MB, of which ~250 MB is the `node:26.13.1-alpine3.24` base
-  (2026-11-24, `docker image ls`). Alternatives were measured; see
+- Image: ~290 MB on the Pi (arm64), almost all of it the
+  `node:26.13.1-alpine3.24` base (2026-11-25, `docker image ls`). Alternatives were measured; see
   [ADR 0001](docs/adr/0001-pure-node-no-express.md).
 
 ## Open questions
@@ -198,8 +198,15 @@ docker compose restart toolshed   # restart
   is ungated at this app (owner: yasabh).
 - **Image tag:** version the image instead of `toolshed:latest`, so rollback
   does not need a rebuild?
-- **Security scan:** `check-security` has not been run yet.
+- **Ghostscript 9.56.0** (in `ghostscript-wasm-esm@1.0.1`, its last release) is
+  an unsupported line. Accepted 2026-11-25: it runs as wasm in the user's own
+  tab, on the user's own file, with no `popen`. Upgrade when a PDF fails or a
+  Ghostscript CVE reachable from wasm lands in CISA KEV. Candidates:
+  `@wasm-zoo/ghostscript` (gs 10.08.0) or `@okathira/ghostpdl-wasm` (gs 10.06.0).
+- **Hardening, not urgent** (check-security 2026-11-25): no branch protection on
+  GitHub `main`; no `Content-Security-Policy` (one inline theme script in
+  `templates/base.html`).
+- **Gatekeeper reach:** is `/toolshed/` reachable from the internet while the
+  gate is unwired?
 - **Worker table** in docs/design.md is computed from the formula, not measured
   on real devices.
-- **Old images on the Pi:** `toolshed:dbg`, `toolshed:layertest*`,
-  `toolshed:wasm`, `toolshed-toolshed:latest` look unused. Safe to remove?
